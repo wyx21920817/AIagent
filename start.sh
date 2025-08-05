@@ -53,7 +53,7 @@ fi
 pip install -r requirements.txt
 
 # Start the FastAPI server
-cd app
+
 uvicorn app.main:app --host 0.0.0.0 --port $PORT --reload
 
 # Deactivate virtual environment
