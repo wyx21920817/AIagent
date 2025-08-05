@@ -44,9 +44,18 @@ if [ ! -f "venv/lib/python*/site-packages/fastapi" ]; then
     pip install -r requirements.txt
 fi
 
-# Start the FastAPI server
+# Create logs directory if not exists
+mkdir -p logs
 
-uvicorn app.main:app --host 0.0.0.0 --port $PORT --reload
+# Start the FastAPI server in background
+echo "Starting FastAPI server on port $PORT..."
+uvicorn app.main:app --host 0.0.0.0 --port $PORT --reload >> logs/server.log 2>&1 &
+
+# Save PID for later use
+echo $! > .server.pid
+echo "Server started in background. PID: $(cat .server.pid)"
+echo "Logs are being written to logs/server.log"
+echo "Use 'tail -f logs/server.log' to follow logs"
 
 # Deactivate virtual environment
 if [ -f "venv/bin/deactivate" ]; then
