@@ -3,32 +3,22 @@
 # Default port
 PORT=${1:-8888}
 
-# Function to get current running port
-get_current_port() {
-    CURRENT_PORT=$(netstat -tuln | grep "uvicorn" | grep -o ":[0-9]\+" | cut -d':' -f2)
-    if [ ! -z "$CURRENT_PORT" ]; then
-        echo "Found running server on port $CURRENT_PORT"
-        PORT=$CURRENT_PORT
-    fi
-}
-
 # Function to check and kill process using the port
 kill_port_process() {
-    if netstat -tuln | grep -q ":$1 "; then
-        echo "Port $1 is in use. Killing the process..."
-        # Get PID of process using the port and kill it
-        pid=$(netstat -tuln | grep ":$1 " | awk '{print $7}' | cut -d'/' -f1)
-        if [ ! -z "$pid" ]; then
-            kill -9 $pid
-            echo "Process killed successfully"
-        fi
+    # Try to kill any process using the port
+    if command -v lsof >/dev/null 2>&1; then
+        pid=$(lsof -ti:$1)
+    else
+        # Fallback to ps and grep for uvicorn
+        pid=$(ps aux | grep "uvicorn.*:$1" | grep -v grep | awk '{print $2}')
+    fi
+    
+    if [ ! -z "$pid" ]; then
+        echo "Port $1 is in use. Killing process $pid..."
+        kill -9 $pid 2>/dev/null || true
+        echo "Process killed successfully"
     fi
 }
-
-# Get current running port if no port specified
-if [ -z "$1" ]; then
-    get_current_port
-fi
 
 echo "Using port: $PORT"
 
@@ -49,19 +39,11 @@ if [ -f "venv/bin/activate" ]; then
     source venv/bin/activate
 fi
 
-# Install requirements if needed
-echo "Installing dependencies..."
-pip install -r requirements.txt -v || {
-    echo "Error: Failed to install dependencies"
-    exit 1
-}
-
-# Verify langchain installation
-pip show langchain || {
-    echo "Error: langchain installation failed"
-    echo "Trying to install langchain separately..."
-    pip install langchain==0.0.274 -v
-}
+# Check if virtual environment exists and has packages installed
+if [ ! -f "venv/lib/python*/site-packages/fastapi" ]; then
+    echo "Installing dependencies (first time setup)..."
+    pip install -r requirements.txt
+fi
 
 # Start the FastAPI server
 
