@@ -16,7 +16,6 @@ from langchain.memory import ConversationBufferMemory
 from langchain.agents import Tool, AgentExecutor, LLMSingleActionAgent
 from langchain.schema import AgentAction, AgentFinish
 from langchain.schema.messages import SystemMessage, HumanMessage, AIMessage
-from app.data.memory.memory_store import MemoryStore
 from app.data.memory.session import SessionManager
 from app.core.database import Database
 from app.utils.models import ChatMessage, ChatResponse, Memory, SessionData
@@ -42,7 +41,6 @@ class DoctorAgent:
             model_name="gpt-3.5-turbo",
             openai_api_key=openai_api_key
         )
-        self.memory_store = MemoryStore()
         self.db = Database()
         self.session_manager = SessionManager()
         self.conversations: Dict[str, List[ChatMessage]] = {}

@@ -50,7 +50,18 @@ if [ -f "venv/bin/activate" ]; then
 fi
 
 # Install requirements if needed
-pip install -r requirements.txt
+echo "Installing dependencies..."
+pip install -r requirements.txt -v || {
+    echo "Error: Failed to install dependencies"
+    exit 1
+}
+
+# Verify langchain installation
+pip show langchain || {
+    echo "Error: langchain installation failed"
+    echo "Trying to install langchain separately..."
+    pip install langchain==0.0.274 -v
+}
 
 # Start the FastAPI server
 
