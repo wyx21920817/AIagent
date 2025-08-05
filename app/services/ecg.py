@@ -8,18 +8,18 @@ from app.model.ecg_file import EcgFile
 class ECGProcessor:
     @staticmethod
     def load_dicom(file_path: str) -> EcgFile:
-        """加载DICOM格式的ECG数据"""
+        """Load ECG data in DICOM format"""
         ds = pydicom.dcmread(file_path)
         
-        # 提取波形数据
+        # Extract waveform data
         waveform_sequence = ds.WaveformSequence[0]
         channel_definitions = waveform_sequence.ChannelDefinitionSequence
         waveform_data = waveform_sequence.WaveformData
         
-        # 解析采样率
+        # Parse sampling rate
         sampling_rate = float(waveform_sequence.SamplingFrequency)
         
-        # 解析导联数据
+        # Parse lead data
         leads = {}
         for i, channel in enumerate(channel_definitions):
             lead_name = channel.ChannelSourceSequence[0].CodeMeaning
@@ -36,19 +36,19 @@ class ECGProcessor:
     
     @staticmethod
     def load_csv(file_path: str) -> EcgFile:
-        """加载CSV格式的ECG数据"""
+        """Load ECG data in CSV format"""
         df = pd.read_csv(file_path)
         
-        # 假设CSV文件格式为:
+        # Assume CSV file format is:
         # time, lead_i, lead_ii, lead_iii, ...
         leads = {}
         for column in df.columns:
             if column.lower() != "time":
                 leads[column] = df[column].tolist()
         
-        # 计算采样率
+        # Calculate sampling rate
         time_diff = df["time"].iloc[1] - df["time"].iloc[0]
-        sampling_rate = 1.0 / time_diff if time_diff > 0 else 1000  # 默认1kHz
+        sampling_rate = 1.0 / time_diff if time_diff > 0 else 1000  # Default 1kHz
         
         return EcgFile(
             patient_id=os.path.splitext(os.path.basename(file_path))[0],
@@ -59,16 +59,16 @@ class ECGProcessor:
     
     @staticmethod
     def prepare_plot_data(ecg_data: EcgFile, duration: float = 10.0) -> Dict:
-        """准备用于前端显示的ECG数据"""
+        """Prepare ECG data for frontend display"""
         plot_data = {}
         samples_per_lead = int(duration * ecg_data.sampling_rate)
         
         for lead_name, values in ecg_data.leads.items():
-            # 确保数据长度足够
+            # Ensure data length is sufficient
             if len(values) < samples_per_lead:
                 continue
                 
-            # 生成时间轴
+            # Generate time axis
             time_points = np.linspace(0, duration, samples_per_lead)
             
             plot_data[lead_name] = {
@@ -85,21 +85,21 @@ class ECGProcessor:
     
     @staticmethod
     def analyze_waveform(ecg_data: Dict) -> Dict:
-        """分析ECG波形数据并返回诊断结果"""
+        """Analyze ECG waveform data and return diagnostic results"""
         try:
-            # 提取关键参数
-            sampling_rate = ecg_data.get('sampling_rate', 500)  # 默认500Hz
+            # Extract key parameters
+            sampling_rate = ecg_data.get('sampling_rate', 500)  # Default 500Hz
             waveform_data = ecg_data.get('waveform_data', [])
             leads = ecg_data.get('leads', [])
             
             if not waveform_data or not leads:
                 return {"error": "Invalid ECG data format"}
             
-            # 基本的ECG分析
-            # 这里是一个简单的示例，实际应用中需要更复杂的分析算法
+            # Basic ECG analysis
+            # This is a simple example, actual application needs more sophisticated analysis algorithms
             analysis = {
-                "heart_rate": "72-80 bpm",  # 示例值
-                "rhythm": "Normal sinus rhythm",  # 示例值
+                "heart_rate": "72-80 bpm",  # Example value
+                "rhythm": "Normal sinus rhythm",  # Example value
                 "abnormalities": [],
                 "conclusion": "Normal ECG pattern"
             }

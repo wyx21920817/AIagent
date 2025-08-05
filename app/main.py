@@ -7,20 +7,20 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
-# 配置日志
-# 设置日志格式
+# Configure logging
+# Set log format
 log_format = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
-# 创建控制台处理器
+# Create console handler
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(log_format)
 
-# 配置 root logger
+# Configure root logger
 root_logger = logging.getLogger()
 root_logger.setLevel(logging.INFO)
 root_logger.addHandler(console_handler)
 
-# 创建主应用日志器
+# Create main application logger
 logger = logging.getLogger('main')
 logger.setLevel(logging.INFO)
 
@@ -73,7 +73,7 @@ class ChatRequest(BaseModel):
     class Config:
         schema_extra = {
             "example": {
-                "message": "分析这个病人的ECG结果",
+                "message": "Analyze this patient's ECG results",
                 "patient_id": "P12345",
                 "conversation_id": None
             }
@@ -100,7 +100,7 @@ async def global_exception_handler(request: Request, exc: Exception):
          description="Send a message to the AI doctor and get a response based on patient context.")
 async def chat(request: ChatRequest):
     try:
-        # 打印请求内容
+        # Print request content
         logger.info(f"[chat] Received request:\n" +
                    f"Message: {request.message}\n" +
                    f"Conversation ID: {request.conversation_id}\n" +
@@ -114,11 +114,11 @@ async def chat(request: ChatRequest):
         if request.message == 'init':
             logger.info(f"Handling initialization request with conversation_id: {conversation_id}")
             return ChatResponse(
-                message="",  # 空消息，不会显示
+                message="",  # Empty message, won't be displayed
                 conversation_id=conversation_id
             )
         
-        # 只检查session是否存在，不创建新的
+        # Only check if session exists, don't create new one
         session = await session_manager.get_session(conversation_id)
         if session:
             logger.info(f"[chat] Found existing session: {conversation_id} with patient_id: {session.patient_id}")
@@ -127,12 +127,12 @@ async def chat(request: ChatRequest):
             patient_id = None
             logger.info(f"[chat] No existing session found for conversation: {conversation_id}")
         
-        # 如果request中提供了patient_id，使用它
+        # If patient_id is provided in request, use it
         if request.patient_id:
             patient_id = request.patient_id
             logger.info(f"[chat] Using patient_id from request: {patient_id}")
         
-        # 记录patient_id的来源
+        # Record source of patient_id
         if patient_id:
             logger.info(f"[chat] Using patient_id: {patient_id} from {'request' if request.patient_id else 'session'}")
         else:
@@ -148,14 +148,14 @@ async def chat(request: ChatRequest):
         logger.info(f"[chat] Got response from doctor_agent, type: {type(response)}")
 
         try:
-            # 打印响应内容
+            # Print response content
             if isinstance(response, ChatResponse):
-                # 创建一个不包含波形数据的上下文副本用于日志记录
+                # Create a context copy without waveform data for logging
                 log_context = response.patient_context.copy() if response.patient_context else None
                 if log_context and 'ecg_data' in log_context:
                     log_context['ecg_data'] = '<waveform data omitted>'
                 
-                # 过滤掉消息中的base64图片数据
+                # Filter out base64 image data from message
                 message_for_log = response.message
                 if 'data:image' in message_for_log:
                     message_for_log = message_for_log.split('data:image')[0] + '<image data omitted>'
@@ -175,11 +175,11 @@ async def chat(request: ChatRequest):
                         f"Response type: {type(response)}\n" +
                         f"Response repr: {repr(response)}")
 
-        # 返回 JSON 响应
+        # Return JSON response
         return response
     except Exception as e:
         logger.error(f"Chat error: {e}", exc_info=True)
-        # 返回错误响应
+        # Return error response
         error_response = ChatResponse(
             message="An unexpected error occurred. Please try again later.",
             conversation_id=conversation_id,

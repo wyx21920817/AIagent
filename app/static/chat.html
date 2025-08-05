@@ -45,16 +45,16 @@
 <body>
     <div id="chat-box"></div>
     <div id="input-box">
-        <input type="text" id="message" placeholder="输入消息...">
-        <button onclick="sendMessage()">发送</button>
+        <input type="text" id="message" placeholder="Enter message...">
+        <button onclick="sendMessage()">Send</button>
     </div>
 
     <script>
         let currentConversationId = null;
 
-        // 页面加载时初始化会话
+        // Initialize session when page loads
         window.onload = function() {
-            // 发送空消息来获取初始 conversation_id
+            // Send empty message to get initial conversation_id
             fetch('/api/chat', {
                 method: 'POST',
                 headers: {
@@ -71,7 +71,7 @@
                     currentConversationId = data.conversation_id;
                     console.log('Initialized conversation_id from server:', currentConversationId);
                 }
-                // 不显示初始化消息
+                // Don't display initialization message
             })
             .catch(error => {
                 console.error('Error initializing chat:', error);
@@ -82,11 +82,11 @@
             const message = document.getElementById('message').value;
             if (!message) return;
 
-            // 显示用户消息
+            // Display user message
             addMessage(message, true);
             document.getElementById('message').value = '';
 
-            // 发送到服务器
+            // Send to server
             const requestBody = {
                 message: message,
                 conversation_id: currentConversationId
@@ -103,19 +103,19 @@
             .then(response => response.json())
             .then(data => {
                 console.log('Received response:', data);
-                // 更新会话ID
+                // Update conversation ID
                 if (data.conversation_id) {
                     currentConversationId = data.conversation_id;
                     console.log('Updated conversation ID:', currentConversationId);
                 } else {
                     console.warn('No conversation_id in response');
                 }
-                // 显示AI回复
+                // Display AI response
                 addMessage(data.message, false);
             })
             .catch(error => {
                 console.error('Error:', error);
-                addMessage('Error: 无法获取回复', false);
+                addMessage('Error: Could not get response', false);
             });
         }
 
@@ -132,7 +132,7 @@
             chatBox.scrollTop = chatBox.scrollHeight;
         }
 
-        // 按Enter发送消息
+        // Press Enter to send message
         document.getElementById('message').addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
                 sendMessage();

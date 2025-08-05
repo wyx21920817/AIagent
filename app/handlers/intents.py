@@ -60,7 +60,7 @@ async def get_latest_diagnosis(db: Database, patient_id: str, study_date: Option
             if "diagnosis_time" in diag:
                 # If date specified, only keep diagnoses from that date
                 if study_date:
-                    diag_date = diag["diagnosis_time"][:8]  # 取前8位作为日期
+                    diag_date = diag["diagnosis_time"][:8]  # Take first 8 characters as date
                     if diag_date == study_date:
                         valid_diagnoses.append(diag)
                 else:

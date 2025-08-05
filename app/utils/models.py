@@ -18,7 +18,7 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     message: str
     conversation_id: str
-    patient_context: Optional[Dict] = None  # 包含当前病人信息
+    patient_context: Optional[Dict] = None  # Contains current patient information
     metadata: Optional[Dict] = None
 
 class Memory(BaseModel):
@@ -43,16 +43,16 @@ class SessionData(BaseModel):
     
     @classmethod
     def from_dict(cls, data: Dict) -> 'SessionData':
-        """从字典创建SessionData对象，确保类型正确"""
+        """Create SessionData object from dictionary, ensuring correct types"""
         if isinstance(data, dict):
-            # 确保last_access是datetime类型
+            # Ensure last_access is datetime type
             if 'last_access' in data and isinstance(data['last_access'], str):
                 data['last_access'] = datetime.fromisoformat(data['last_access'])
             return cls(**data)
         return data if isinstance(data, cls) else cls()
     
     def to_dict(self) -> Dict:
-        """转换为字典，确保所有字段都可以正确序列化"""
+        """Convert to dictionary, ensuring all fields can be properly serialized"""
         return {
             'session_id': self.session_id,
             'patient_id': self.patient_id,

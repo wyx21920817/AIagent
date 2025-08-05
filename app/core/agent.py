@@ -24,7 +24,7 @@ from app.handlers.intents import Intent, IntentResult, handle_switch_patient, \
                    handle_patient_query, handle_analyze_ecg, handle_view_ecg, \
                    handle_generate_report, handle_compare_patients, handle_medical_question
 from app.utils.tools import (
-    get_available_tools, get_patient_data, get_ecg_plot,
+    get_patient_data, get_ecg_plot,
     analyze_ecg, search_medical_knowledge, recommend_treatment
 )
 from app.core.intent_classifier import IntentClassifier

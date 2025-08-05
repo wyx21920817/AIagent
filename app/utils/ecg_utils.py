@@ -165,7 +165,7 @@ def get_patient_ecg_data(patient_id: str, study_date: Optional[str] = None) -> D
             logging.warning(f"[get_patient_ecg_data] No diagnosis result found for ECG file: {ecg_file.dicom_uid}")
             
         diagnosis = interpret_diagnosis(ecg_file.diagnosis_result)
-        # 日志记录诊断解释结果和原始数据状态
+        # Log diagnostic interpretation results and original data status
         logging.info(f"[get_patient_ecg_data] Raw diagnosis data exists: {bool(ecg_file.diagnosis_result)}")
         logging.info(f"[get_patient_ecg_data] Diagnosis interpretation: {diagnosis.get('interpretation', 'N/A')}")
         

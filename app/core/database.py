@@ -27,10 +27,10 @@ class Database:
     async def get_patient(self, patient_id: str) -> Optional[Patient]:
         """Get patient by ID (either MongoDB _id or patient_id field)"""
         try:
-            # 先尝试按MongoDB的_id查询
+            # First try to query by MongoDB _id
             from bson import ObjectId
             try:
-                if len(patient_id) == 24:  # MongoDB ObjectId是24位的
+                if len(patient_id) == 24:  # MongoDB ObjectId is 24 characters
                     doc = await self.db.patients.find_one({"_id": ObjectId(patient_id)})
                     if doc:
                         doc["id"] = str(doc.pop("_id"))
@@ -38,7 +38,7 @@ class Database:
             except Exception as e:
                 logging.debug(f"Not a valid ObjectId: {patient_id}, trying patient_id field")
             
-            # 如果不是ObjectId或没找到，尝试按patient_id字段查询
+            # If not ObjectId or not found, try to query by patient_id field
             doc = await self.db.patients.find_one({"patient_id": patient_id})
             if doc:
                 doc["id"] = str(doc.pop("_id"))
@@ -128,7 +128,7 @@ class Database:
     async def get_patient_diagnoses(self, patient_id: str) -> List[Dict]:
         """Get all diagnoses for a patient from ECG files"""
         try:
-            # 首先获取患者记录以确认存在性
+            # First get patient record to confirm existence
             doc = await self.db.patients.find_one({"patient_id": patient_id})
             if not doc:
                 logging.warning(f"[get_patient_diagnoses] Patient not found: {patient_id}")
@@ -137,7 +137,7 @@ class Database:
             patient_object_id = doc["_id"]
             logging.info(f"[get_patient_diagnoses] Found patient with _id: {patient_object_id}")
             
-            # 使用患者的 _id 查询ECG文件
+            # Query ECG files using patient's _id
             cursor = self.db.ecg_files.find({"patient_id": patient_object_id})
             diagnoses = []
             async for doc in cursor:
@@ -145,15 +145,15 @@ class Database:
                     continue
                     
                 diagnosis = doc["diagnosis_result"]
-                # 确保诊断结果包含时间戳
+                # Ensure diagnosis result includes timestamp
                 if "diagnosis_time" not in diagnosis:
                     diagnosis["diagnosis_time"] = doc.get("created_at", datetime.utcnow())
                 if "created_at" not in diagnosis:
                     diagnosis["created_at"] = doc.get("created_at", datetime.utcnow())
                     
-                # 添加一些元数据
+                # Add some metadata
                 diagnosis["ecg_id"] = str(doc["_id"])
-                diagnosis["patient_id"] = patient_id  # 保存原始的patient_id以便引用
+                diagnosis["patient_id"] = patient_id  # Save original patient_id for reference
                     
                 diagnoses.append(diagnosis)
                 
