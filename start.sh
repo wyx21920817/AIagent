@@ -1,35 +1,34 @@
 #!/bin/bash
 
 # Default port
-PORT=${1:-8888}
+PORT=8888
 
-# Function to check and kill process using the port
+# Function to check and kill process on specific port
 kill_port_process() {
-    # Try to kill any process using the port
-    if command -v lsof >/dev/null 2>&1; then
-        pid=$(lsof -ti:$1)
+    # Only look for process on the specified port
+    if command -v netstat >/dev/null 2>&1; then
+        pid=$(netstat -ano | grep "LISTENING" | grep ":$1" | awk '{print $5}')
     else
-        # Fallback to ps and grep for uvicorn
-        pid=$(ps aux | grep "uvicorn.*:$1" | grep -v grep | awk '{print $2}')
+        # Fallback to ps and grep
+        pid=$(ps aux | grep ":$1" | grep "LISTEN" | grep -v grep | awk '{print $2}')
     fi
     
     if [ ! -z "$pid" ]; then
-        echo "Port $1 is in use. Killing process $pid..."
+        echo "Found process $pid using port $1"
         kill -9 $pid 2>/dev/null || true
         echo "Process killed successfully"
+    else
+        echo "No process found on port $1"
     fi
 }
 
 echo "Using port: $PORT"
 
-# Kill any process using our port
+# Only kill process using our specific port
 kill_port_process $PORT
 
-# Kill any remaining uvicorn processes
-pkill -f uvicorn
-
 # Wait a moment for the process to be fully killed
-sleep 2
+sleep 1
 
 # Make script executable
 chmod +x start.sh

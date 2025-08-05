@@ -1,5 +1,6 @@
 from typing import Optional, Dict, Any, List
 import logging
+import traceback
 from datetime import datetime
 from bson import ObjectId
 from app.model.patient import Patient
@@ -143,8 +144,21 @@ def get_patient_ecg_data(patient_id: str, study_date: Optional[str] = None) -> D
             return {"error": f"Error getting ECG data: {str(e)}"}
         
         # Get temporary token for Orthanc API access
-        token = get_temp_token()
-        waveform_data = get_instance_waveform(ecg_file.dicom_uid, token)
+        try:
+            logging.info(f"[get_patient_ecg_data] Getting temp token for Orthanc access")
+            token = get_temp_token()
+            if not token:
+                logging.error(f"[get_patient_ecg_data] Failed to get auth token")
+                return {"error": "Failed to get authentication token"}
+            logging.info(f"[get_patient_ecg_data] Got token, length: {len(token)}")
+            
+            logging.info(f"[get_patient_ecg_data] Getting waveform data for DICOM: {ecg_file.dicom_uid}")
+            waveform_data = get_instance_waveform(ecg_file.dicom_uid, token)
+            logging.info(f"[get_patient_ecg_data] Waveform data retrieved: {bool(waveform_data)}")
+        except Exception as e:
+            logging.error(f"[get_patient_ecg_data] Error getting waveform data: {str(e)}")
+            logging.error(traceback.format_exc())
+            return {"error": f"Error accessing ECG data: {str(e)}"}
         
         # Get diagnosis interpretation
         if not ecg_file.diagnosis_result:
