@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AI Chat</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        #chat-container {
+            border: 1px solid #ccc;
+            padding: 20px;
+            height: 400px;
+            overflow-y: auto;
+            margin-bottom: 20px;
+        }
+        #input-container {
+            display: flex;
+            gap: 10px;
+        }
+        #message-input {
+            flex-grow: 1;
+            padding: 10px;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        .message {
+            margin-bottom: 10px;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .user-message {
+            background-color: #007bff;
+            color: white;
+            margin-left: 20%;
+        }
+        .bot-message {
+            background-color: #e9ecef;
+            margin-right: 20%;
+        }
+        .chat-container {
+            height: 400px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 5px;
+        }
+        .patient-info {
+            border: 1px solid #eee;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+        }
+        .ecg-container {
+            border: 1px solid #eee;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            min-height: 300px;
+        }
+        .message {
+            margin-bottom: 10px;
+            padding: 8px 15px;
+            border-radius: 15px;
+            max-width: 80%;
+        }
+        .user-message {
+            background-color: #007bff;
+            color: white;
+            margin-left: auto;
+        }
+        .assistant-message {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-4">
+        <h2 class="mb-4">AI Doctor Assistant - Test Interface</h2>
+        
+        <div id="chat-container"></div>
+        <div id="input-container">
+            <input type="text" id="message-input" placeholder="Type your message...">
+            <button onclick="sendMessage()">Send</button>
+        </div>
+
+        <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+        <script>
+            let currentConversationId = null;
+            let currentPatientId = null;
+
+        // Load patient list
+        async function loadPatients() {
+            try {
+                const response = await fetch('/api/patients');
+                const patients = await response.json();
+                const select = document.getElementById('patientSelect');
+                select.innerHTML = '<option value="">Select a patient...</option>';
+                patients.forEach(patient => {
+                    select.innerHTML += `<option value="${patient.id}">${patient.name} (ID: ${patient.id})</option>`;
+                });
+            } catch (error) {
+                console.error('Error loading patients:', error);
+            }
+        }
+
+        // Load patient info
+        async function loadPatientInfo(patientId) {
+            try {
+                const response = await fetch(`/api/patients/${patientId}`);
+                const patient = await response.json();
+                document.getElementById('patientInfo').innerHTML = `
+                    <p><strong>Name:</strong> ${patient.name}</p>
+                    <p><strong>Age:</strong> ${patient.age}</p>
+                    <p><strong>Gender:</strong> ${patient.gender}</p>
+                    <p><strong>ID:</strong> ${patient.id}</p>
+                `;
+                return patient;
+            } catch (error) {
+                console.error('Error loading patient info:', error);
+            }
+        }
+
+        async function sendMessage() {
+            const messageInput = document.getElementById('message-input');
+            const message = messageInput.value.trim();
+            
+            if (message) {
+                const chatContainer = document.getElementById('chat-container');
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'message user-message';
+                messageDiv.textContent = message;
+                chatContainer.appendChild(messageDiv);
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+                messageInput.value = '';
+            }
+        }
+
+        document.getElementById('message-input').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+                currentConversationId = null; // Reset conversation
+                document.getElementById('chatContainer').innerHTML = ''; // Clear chat
+            }
+        });
+
+        document.getElementById('sendMessage').addEventListener('click', async () => {
+            const messageInput = document.getElementById('messageInput');
+            const message = messageInput.value.trim();
+            if (message && currentPatientId) {
+                addMessage(message, true);
+                messageInput.value = '';
+                const response = await sendMessage(message);
+                addMessage(response.message);
+            }
+        });
+
+        document.getElementById('messageInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                document.getElementById('sendMessage').click();
+            }
+        });
+
+        // Initialize
+        loadPatients();
+    </script>
+</body>
+</html>

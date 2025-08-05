@@ -1,0 +1,24 @@
+fastapi==0.103.0
+uvicorn==0.23.2
+python-dotenv==1.0.0
+pydantic==2.3.0
+python-multipart==0.0.6
+langchain==0.0.274
+openai==0.27.8
+chromadb==0.4.6
+tiktoken==0.4.0
+# Database Support
+pymongo==4.5.0
+motor==3.3.1
+# ECG File Processing
+pydicom==2.4.3
+pandas==2.1.0
+numpy==1.24.3
+# Data Visualization
+plotly==5.17.0
+# Session Management
+redis==5.0.0
+aioredis==2.0.1
+# Tool Chain Support
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4

@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AI Chat</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        #chat-box {
+            width: 500px;
+            height: 400px;
+            border: 1px solid #ccc;
+            margin: 20px auto;
+            padding: 20px;
+            overflow-y: auto;
+        }
+        #input-box {
+            width: 500px;
+            margin: 0 auto;
+            display: flex;
+            gap: 10px;
+        }
+        #message {
+            flex-grow: 1;
+            padding: 10px;
+        }
+        button {
+            padding: 10px 20px;
+        }
+        .user-msg {
+            text-align: right;
+            margin: 10px 0;
+            color: blue;
+        }
+        .bot-msg {
+            text-align: left;
+            margin: 10px 0;
+            color: green;
+        }
+        .bot-msg img {
+            max-width: 100%;
+            height: auto;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div id="chat-box"></div>
+    <div id="input-box">
+        <input type="text" id="message" placeholder="输入消息...">
+        <button onclick="sendMessage()">发送</button>
+    </div>
+
+    <script>
+        let currentConversationId = null;
+
+        // 页面加载时初始化会话
+        window.onload = function() {
+            // 发送空消息来获取初始 conversation_id
+            fetch('/api/chat', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    message: 'init',
+                    conversation_id: null
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.conversation_id) {
+                    currentConversationId = data.conversation_id;
+                    console.log('Initialized conversation_id from server:', currentConversationId);
+                }
+                // 不显示初始化消息
+            })
+            .catch(error => {
+                console.error('Error initializing chat:', error);
+            });
+        };
+
+        function sendMessage() {
+            const message = document.getElementById('message').value;
+            if (!message) return;
+
+            // 显示用户消息
+            addMessage(message, true);
+            document.getElementById('message').value = '';
+
+            // 发送到服务器
+            const requestBody = {
+                message: message,
+                conversation_id: currentConversationId
+            };
+            console.log('Sending request with:', requestBody);
+            
+            fetch('/api/chat', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestBody)
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Received response:', data);
+                // 更新会话ID
+                if (data.conversation_id) {
+                    currentConversationId = data.conversation_id;
+                    console.log('Updated conversation ID:', currentConversationId);
+                } else {
+                    console.warn('No conversation_id in response');
+                }
+                // 显示AI回复
+                addMessage(data.message, false);
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                addMessage('Error: 无法获取回复', false);
+            });
+        }
+
+        function addMessage(text, isUser) {
+            const chatBox = document.getElementById('chat-box');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = isUser ? 'user-msg' : 'bot-msg';
+            if (isUser) {
+                msgDiv.textContent = text;
+            } else {
+                msgDiv.innerHTML = marked.parse(text);
+            }
+            chatBox.appendChild(msgDiv);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        // 按Enter发送消息
+        document.getElementById('message').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>
