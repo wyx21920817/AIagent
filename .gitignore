@@ -40,6 +40,7 @@ logs/
 .env
 .pid
 .DS_Store
+.git
 
 # Project specific
 uploads/
