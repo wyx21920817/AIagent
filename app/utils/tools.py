@@ -14,7 +14,7 @@ class ECGTools:
         self.db = Database()
         self.ecg_processor = ECGProcessor()
         self.orthanc_url = os.getenv('ORTHANC_SERVER_URL', 'http://127.0.0.1:8042')
-        self.auth_url = os.getenv('AUTH_SERVER_URL', 'http://52.63.231.27:8001')
+        self.auth_url = os.getenv('AUTH_SERVER_URL', 'http://54.79.181.49:8001')
     
     async def get_temp_token(self) -> str:
         """Get temporary authentication token"""

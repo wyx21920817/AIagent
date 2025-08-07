@@ -5,7 +5,7 @@ from typing import Optional
 
 class AuthClient:
     def __init__(self):
-        self.auth_url = os.getenv('AUTH_SERVER_URL', 'http://52.63.231.27:8001')
+        self.auth_url = os.getenv('AUTH_SERVER_URL', 'http://54.79.181.49:8001')
         self._token_cache = None
     
     def get_temp_token(self, force_new: bool = False) -> str:
