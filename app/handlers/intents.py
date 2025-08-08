@@ -11,7 +11,6 @@ from app.utils.models import ChatResponse, SessionData
 from app.core.database import Database
 from app.model.ecg_file import EcgFile
 from app.model.patient import Patient
-from app.model.enums import Gender
 from app.data.memory.session import SessionManager
 from app.utils.ecg_utils import get_patient_ecg_data, interpret_diagnosis
 from app.utils.ecg_plot import plot_ecg_waveform
