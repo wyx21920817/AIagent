@@ -6,7 +6,7 @@ import os
 import logging
 from mongoengine import connect
 from app.model.ecg_file import EcgFile
-from app.model.patient import Patient, Gender
+from app.model.patient import Patient
 
 # Load environment variables
 load_dotenv()

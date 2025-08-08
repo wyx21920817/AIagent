@@ -10,7 +10,8 @@ from langchain.prompts import ChatPromptTemplate
 from app.utils.models import ChatResponse, SessionData
 from app.core.database import Database
 from app.model.ecg_file import EcgFile
-from app.model.patient import Patient, Gender
+from app.model.patient import Patient
+from app.model.enums import Gender
 from app.data.memory.session import SessionManager
 from app.utils.ecg_utils import get_patient_ecg_data, interpret_diagnosis
 from app.utils.ecg_plot import plot_ecg_waveform
@@ -136,7 +137,7 @@ async def handle_patient_query(extracted_info: Dict[str, Any], conversation_id: 
     info = [
         f"Patient Name: {patient.name}",
         f"Patient ID: {patient.patient_id}",
-        f"Gender: {patient.gender.value if patient.gender else 'Not specified'}",
+        f"Gender: {patient.gender if patient.gender else 'Not specified'}",
         f"Birth Date: {patient.birth_date.strftime('%Y-%m-%d') if patient.birth_date else 'Not specified'}"
     ]
     
@@ -614,8 +615,8 @@ async def handle_medical_question(extracted_info: Dict[str, Any], conversation_i
             patient = await db.get_patient(patient_id)
             if patient:
                 patient_info = f"Patient: {patient.name}, ID: {patient.patient_id}, "
-                patient_info += f"Gender: {patient.gender.value if patient.gender else 'Not specified'}, "
-                patient_info += f"Birth Date: {patient.birth_date.strftime('%Y-%m-%d') if patient.birth_date else 'Not specified'}"
+                patient_info += f"Gender: {patient.gender if patient.gender else 'Not specified'}"
+                patient_info += f", Birth Date: {patient.birth_date.strftime('%Y-%m-%d') if patient.birth_date else 'Not specified'}"
         except Exception as e:
             logging.error(f"Error getting patient info: {e}")
     

@@ -19,7 +19,7 @@ from langchain.schema.messages import SystemMessage, HumanMessage, AIMessage
 from app.data.memory.session import SessionManager
 from app.core.database import Database
 from app.utils.models import ChatMessage, ChatResponse, Memory, SessionData
-from app.model.patient import Patient, Gender
+from app.model.patient import Patient
 from app.handlers.intents import Intent, IntentResult, handle_switch_patient, \
                    handle_patient_query, handle_analyze_ecg, handle_view_ecg, \
                    handle_generate_report, handle_compare_patients, handle_medical_question
