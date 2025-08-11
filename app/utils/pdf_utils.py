@@ -9,6 +9,10 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.units import inch
 import logging
 import base64
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Directory for storing generated PDF reports
 REPORTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "reports")
@@ -212,4 +216,11 @@ def get_report_download_url(file_name):
     Returns:
         str: URL for downloading the report
     """
-    return f"/api/reports/download/{file_name}"
+    # Get the base URL from environment variables, default to empty string if not available
+    base_url = os.getenv("AIAGENT_URL", "")
+    
+    # If base_url is available, use it, otherwise use relative URL
+    if base_url:
+        return f"{base_url}/api/reports/download/{file_name}"
+    else:
+        return f"/api/reports/download/{file_name}"
