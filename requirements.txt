@@ -15,6 +15,7 @@ tiktoken>=0.7.0
 # Database Support
 pymongo==4.5.0
 motor==3.3.1
+mongoengine==0.27.0
 
 # ECG File Processing
 pydicom==2.4.3
@@ -24,6 +25,7 @@ numpy==1.24.3
 # Data Visualization
 plotly==5.17.0
 reportlab==4.4.3
+matplotlib==3.8.0
 
 # Session Management
 redis==5.0.0
