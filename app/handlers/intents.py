@@ -602,7 +602,7 @@ async def handle_export_report(db, extracted_info: Dict[str, Any], conversation_
                 conversation_id=conversation_id
             )
         
-        # Get download URL
+        # Get download URL - this will include AIAGENT_URL if available
         download_url = get_report_download_url(file_name)
         
         # Create response message with download link
