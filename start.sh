@@ -5,20 +5,24 @@ PORT=8888
 
 # Function to check and kill process on specific port
 kill_port_process() {
-    # Only look for process on the specified port
-    if command -v netstat >/dev/null 2>&1; then
-        pid=$(netstat -ano | grep "LISTENING" | grep ":$1" | awk '{print $5}')
+    local port=$1
+    local pids=$(lsof -t -i:$port)
+    if [ -n "$pids" ]; then
+        echo "Killing processes using port $port: $pids"
+        for pid in $pids; do
+            echo "Killing process $pid"
+            kill -9 $pid 2>/dev/null
+        done
     else
-        # Fallback to ps and grep
-        pid=$(ps aux | grep ":$1" | grep "LISTEN" | grep -v grep | awk '{print $2}')
+        echo "No process found using port $port"
     fi
     
-    if [ ! -z "$pid" ]; then
-        echo "Found process $pid using port $1"
-        kill -9 $pid 2>/dev/null || true
-        echo "Process killed successfully"
-    else
-        echo "No process found on port $1"
+    # Double-check if port is still in use
+    sleep 1
+    if netstat -tuln | grep -q ":$port "; then
+        echo "Port $port is still in use. Trying alternative method..."
+        # Try alternative method to kill processes
+        fuser -k -n tcp $port 2>/dev/null
     fi
 }
 
@@ -44,8 +48,9 @@ if [ ! -f "venv/lib/python*/site-packages/fastapi" ]; then
     pip install -r requirements.txt
 fi
 
-# Create logs directory if not exists
+# Create logs and reports directories if not exists
 mkdir -p logs
+mkdir -p reports
 
 # Start the FastAPI server in background
 echo "Starting FastAPI server on port $PORT..."
