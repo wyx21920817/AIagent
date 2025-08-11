@@ -23,6 +23,7 @@ numpy==1.24.3
 
 # Data Visualization
 plotly==5.17.0
+reportlab==4.4.3
 
 # Session Management
 redis==5.0.0

@@ -14,7 +14,9 @@ from app.model.patient import Patient
 from app.data.memory.session import SessionManager
 from app.utils.ecg_utils import get_patient_ecg_data, interpret_diagnosis
 from app.utils.ecg_plot import plot_ecg_waveform
+from app.utils.pdf_utils import generate_pdf_report, get_report_download_url
 import numpy as np
+import os
 
 # Initialize managers
 session_manager = SessionManager()
@@ -514,6 +516,120 @@ async def handle_generate_report(db, extracted_info: Dict[str, Any], conversatio
             }
         }
     )
+
+async def handle_export_report(db, extracted_info: Dict[str, Any], conversation_id: str) -> ChatResponse:
+    """Generate and export a PDF report for a patient's ECG data and diagnosis"""
+    logging.info(f"[handle_export_report] Processing export report request with extracted_info: {extracted_info}")
+    
+    # Get patient ID, prioritize from extracted info
+    patient_id = extracted_info.get("patient_id")
+    if not patient_id:
+        # Try to get from session
+        session = await session_manager.get_session(conversation_id)
+        if session and session.patient_id:
+            patient_id = session.patient_id
+            logging.info(f"[handle_export_report] Using patient_id from session: {patient_id}")
+        else:
+            logging.warning("[handle_export_report] No patient_id in extracted_info or session")
+            return ChatResponse(
+                message="Please specify a patient ID to generate a report.",
+                conversation_id=conversation_id
+            )
+    
+    # Get study date if specified
+    study_date = extracted_info.get("study_date")
+    
+    # Get ECG data using the utility function
+    result = get_patient_ecg_data(patient_id, study_date)
+    
+    if "error" in result:
+        return ChatResponse(
+            message=result["error"],
+            conversation_id=conversation_id
+        )
+    
+    patient = result["patient"]
+    ecg_data = result["ecg_data"]
+    
+    # Format date and time
+    date_str = f"{ecg_data['study_date'][:4]}-{ecg_data['study_date'][4:6]}-{ecg_data['study_date'][6:]}"
+    time_str = f"{ecg_data['study_time'][:2]}:{ecg_data['study_time'][2:4]}"
+    
+    # Generate ECG plot image for the PDF
+    waveform = ecg_data.get("waveform", {})
+    ecg_image_path = None
+    
+    if waveform and "data" in waveform and "leads" in waveform:
+        try:
+            # Create reports directory if it doesn't exist
+            reports_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "reports")
+            os.makedirs(reports_dir, exist_ok=True)
+            
+            # Generate a unique filename for the ECG image
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            ecg_image_filename = f"ecg_plot_{patient_id}_{timestamp}.png"
+            ecg_image_path = os.path.join(reports_dir, ecg_image_filename)
+            
+            # Save ECG plot as image
+            from app.utils.ecg_plot import save_ecg_plot_image
+            save_ecg_plot_image(
+                waveform_data=np.array(waveform["data"]),
+                sampling_rate=waveform.get("sampling_rate", 500),
+                leads=waveform["leads"],
+                duration=waveform.get("duration", 10.0),
+                output_path=ecg_image_path
+            )
+            logging.info(f"[handle_export_report] ECG plot image saved to {ecg_image_path}")
+        except Exception as e:
+            logging.error(f"[handle_export_report] Error generating ECG plot image: {str(e)}", exc_info=True)
+            ecg_image_path = None
+    
+    # Get diagnosis data
+    diagnosis = ecg_data.get("diagnosis", {})
+    
+    # Generate PDF report
+    try:
+        file_path, file_name = generate_pdf_report(
+            patient_info=patient,
+            ecg_data=ecg_data,
+            diagnosis_data=diagnosis,
+            ecg_image_path=ecg_image_path
+        )
+        
+        if not file_path or not file_name:
+            return ChatResponse(
+                message="Error generating PDF report. Please try again later.",
+                conversation_id=conversation_id
+            )
+        
+        # Get download URL
+        download_url = get_report_download_url(file_name)
+        
+        # Create response message with download link
+        message = f"### ECG Report Generated Successfully\n\n"
+        message += f"**Patient:** {patient['name']} (ID: {patient['patient_id']})\n"
+        message += f"**Study Date:** {date_str}\n"
+        message += f"**Study Time:** {time_str}\n\n"
+        message += f"[Download PDF Report]({download_url})\n\n"
+        message += "The report includes patient information, ECG data, and diagnostic results."
+        
+        return ChatResponse(
+            message=message,
+            conversation_id=conversation_id,
+            patient_context={
+                "patient_id": patient_id,
+                "patient_name": patient['name'],
+                "study_date": date_str,
+                "study_time": time_str,
+                "report_url": download_url
+            }
+        )
+    except Exception as e:
+        logging.error(f"[handle_export_report] Error generating PDF report: {str(e)}", exc_info=True)
+        return ChatResponse(
+            message=f"Error generating PDF report: {str(e)}",
+            conversation_id=conversation_id
+        )
 
 async def handle_compare_patients(db, extracted_info: Dict[str, Any], conversation_id: str) -> ChatResponse:
     """Compare ECG records for the same patient"""

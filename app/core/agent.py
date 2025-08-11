@@ -22,7 +22,7 @@ from app.utils.models import ChatMessage, ChatResponse, Memory, SessionData
 from app.model.patient import Patient
 from app.handlers.intents import Intent, IntentResult, handle_switch_patient, \
                    handle_patient_query, handle_analyze_ecg, handle_view_ecg, \
-                   handle_generate_report, handle_compare_patients, handle_medical_question
+                   handle_generate_report, handle_export_report, handle_compare_patients, handle_medical_question
 from app.utils.tools import (
     get_patient_data, get_ecg_plot,
     analyze_ecg, search_medical_knowledge, recommend_treatment
@@ -192,6 +192,9 @@ AI Doctor: Let me help you analyze this case."""
                 elif intent_result.intent == Intent.GENERATE_REPORT:
                     # Generate diagnostic report
                     response = await handle_generate_report(self.db, intent_result.extracted_info, conversation_id)
+                elif intent_result.intent == Intent.EXPORT_REPORT:
+                    # Export report as PDF
+                    response = await handle_export_report(self.db, intent_result.extracted_info, conversation_id)
                 elif intent_result.intent == Intent.MEDICAL_QUESTION:
                     # Answer medical questions
                     response = await handle_medical_question(intent_result.extracted_info, conversation_id)

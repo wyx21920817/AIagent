@@ -111,6 +111,7 @@ INTENT TYPES (use exactly one of these values):
 - "view_ecg": When user wants to view ECG data
 - "medical_question": When user asks general medical questions
 - "generate_report": When user requests a report generation
+- "export_report": When user wants to export or download a report as PDF
 
 RULES:
 1. CONFIDENCE must be a number between 0.0 and 1.0

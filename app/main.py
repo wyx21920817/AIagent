@@ -24,7 +24,7 @@ root_logger.addHandler(console_handler)
 logger = logging.getLogger('main')
 logger.setLevel(logging.INFO)
 
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
 from pydantic import BaseModel
 from typing import Optional, Dict, List
 from datetime import datetime
@@ -60,6 +60,11 @@ app.add_middleware(
 import os
 static_dir = os.path.join(os.path.dirname(__file__), "static")
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+# Mount reports directory
+reports_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "reports")
+os.makedirs(reports_dir, exist_ok=True)
+app.mount("/reports", StaticFiles(directory=reports_dir), name="reports")
 
 # Initialize components
 doctor_agent = DoctorAgent()
@@ -254,5 +259,24 @@ async def health_check():
 async def root():
     chat_html = os.path.join(os.path.dirname(__file__), "static", "chat.html")
     return FileResponse(chat_html)
+
+@app.get("/api/reports/download/{file_name}",
+        summary="Download a generated report",
+        description="Download a previously generated PDF report by filename.")
+async def download_report(file_name: str):
+    """Download a generated PDF report"""
+    try:
+        file_path = os.path.join(reports_dir, file_name)
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail="Report not found")
+            
+        return FileResponse(
+            path=file_path,
+            filename=file_name,
+            media_type="application/pdf"
+        )
+    except Exception as e:
+        logger.error(f"Error downloading report: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error downloading report")
 
 
