@@ -266,9 +266,16 @@ async def root():
 async def download_report(file_name: str):
     """Download a generated PDF report"""
     try:
+        # First check in the main reports directory
         file_path = os.path.join(reports_dir, file_name)
+        
+        # If not found, check in the ecg subdirectory
         if not os.path.exists(file_path):
-            raise HTTPException(status_code=404, detail="Report not found")
+            ecg_reports_dir = os.path.join(reports_dir, "ecg")
+            file_path = os.path.join(ecg_reports_dir, file_name)
+            
+            if not os.path.exists(file_path):
+                raise HTTPException(status_code=404, detail="Report not found")
             
         return FileResponse(
             path=file_path,

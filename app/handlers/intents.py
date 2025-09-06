@@ -15,6 +15,7 @@ from app.data.memory.session import SessionManager
 from app.utils.ecg_utils import get_patient_ecg_data, interpret_diagnosis
 from app.utils.ecg_plot import plot_ecg_waveform
 from app.utils.pdf_utils import generate_pdf_report, get_report_download_url
+from app.utils.auth_utils import get_temp_token
 import numpy as np
 import os
 
@@ -519,7 +520,38 @@ async def handle_generate_report(db, extracted_info: Dict[str, Any], conversatio
 
 async def handle_export_report(db, extracted_info: Dict[str, Any], conversation_id: str) -> ChatResponse:
     """Generate and export a PDF report for a patient's ECG data and diagnosis"""
+    import os
     logging.info(f"[handle_export_report] Processing export report request with extracted_info: {extracted_info}")
+    
+    # Extract instance ID from the question if available
+    question = extracted_info.get("question", "")
+    instance_id = extracted_info.get("instance_id") or extracted_info.get("ecg_id")
+    
+    # Try to extract instance ID from the question if not found in extracted_info
+    if not instance_id and question:
+        import re
+        # Look for patterns like "ECG instance ID is X" or "instance ID X"
+        id_patterns = [
+            r"ECG instance ID is ([\w\-]+)",
+            r"instance ID is ([\w\-]+)",
+            r"instance ID ([\w\-]+)",
+            r"ECG ID is ([\w\-]+)",
+            r"ECG ID ([\w\-]+)"
+        ]
+        
+        for pattern in id_patterns:
+            match = re.search(pattern, question, re.IGNORECASE)
+            if match:
+                instance_id = match.group(1)
+                logging.info(f"[handle_export_report] Extracted instance_id from question: {instance_id}")
+                break
+    
+    # If still no instance_id, inform the user
+    if not instance_id:
+        return ChatResponse(
+            message="Please provide an ECG instance ID to generate a report.",
+            conversation_id=conversation_id
+        )
     
     # Get patient ID, prioritize from extracted info
     patient_id = extracted_info.get("patient_id")
@@ -536,98 +568,187 @@ async def handle_export_report(db, extracted_info: Dict[str, Any], conversation_
                 conversation_id=conversation_id
             )
     
-    # Get study date if specified
-    study_date = extracted_info.get("study_date")
-    
-    # Get ECG data using the utility function
-    result = get_patient_ecg_data(patient_id, study_date)
-    
-    if "error" in result:
+    # Verify that the patient exists
+    try:
+        patient = await db.get_patient(patient_id)
+        if not patient:
+            return ChatResponse(
+                message=f"Patient with ID {patient_id} not found.",
+                conversation_id=conversation_id
+            )
+        logging.info(f"[handle_export_report] Found patient: {patient.name} (ID: {patient.patient_id})")
+    except Exception as e:
+        logging.error(f"[handle_export_report] Error getting patient: {str(e)}", exc_info=True)
         return ChatResponse(
-            message=result["error"],
+            message=f"Error retrieving patient information: {str(e)}",
             conversation_id=conversation_id
         )
     
-    patient = result["patient"]
-    ecg_data = result["ecg_data"]
-    
-    # Format date and time
-    date_str = f"{ecg_data['study_date'][:4]}-{ecg_data['study_date'][4:6]}-{ecg_data['study_date'][6:]}"
-    time_str = f"{ecg_data['study_time'][:2]}:{ecg_data['study_time'][2:4]}"
-    
-    # Generate ECG plot image for the PDF
-    waveform = ecg_data.get("waveform", {})
-    ecg_image_path = None
-    
-    if waveform and "data" in waveform and "leads" in waveform:
-        try:
-            # Create reports directory if it doesn't exist
-            reports_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "reports")
-            os.makedirs(reports_dir, exist_ok=True)
-            
-            # Generate a unique filename for the ECG image
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            ecg_image_filename = f"ecg_plot_{patient_id}_{timestamp}.png"
-            ecg_image_path = os.path.join(reports_dir, ecg_image_filename)
-            
-            # Save ECG plot as image
-            from app.utils.ecg_plot import save_ecg_plot_image
-            save_ecg_plot_image(
-                waveform_data=np.array(waveform["data"]),
-                sampling_rate=waveform.get("sampling_rate", 500),
-                leads=waveform["leads"],
-                duration=waveform.get("duration", 10.0),
-                output_path=ecg_image_path
-            )
-            logging.info(f"[handle_export_report] ECG plot image saved to {ecg_image_path}")
-        except Exception as e:
-            logging.error(f"[handle_export_report] Error generating ECG plot image: {str(e)}", exc_info=True)
-            ecg_image_path = None
-    
-    # Get diagnosis data
-    diagnosis = ecg_data.get("diagnosis", {})
-    
-    # Generate PDF report
+    # Try to find the ECG file by instance_id to extract diagnosis results
     try:
-        file_path, file_name = generate_pdf_report(
-            patient_info=patient,
-            ecg_data=ecg_data,
-            diagnosis_data=diagnosis,
-            ecg_image_path=ecg_image_path
-        )
+        # First try to find in the ecg_files collection by instanceIDs field
+        from pymongo import MongoClient
+        mongodb_uri = os.getenv('MONGODB_URI', 'mongodb://localhost:27017')
+        client = MongoClient(mongodb_uri)
+        db_mongo = client.aiclinic
         
-        if not file_path or not file_name:
+        # Look for ECG files that contain this instance_id in their instanceIDs array
+        ecg_file = db_mongo.ecg_files.find_one({"dicom_uid": instance_id})
+        
+        # If not found, try looking by dicom_uid
+        if not ecg_file:
+            ecg_file = db_mongo.ecg_files.find_one({"dicom_uid": instance_id})
+        
+        diseases = []
+        
+        # If we found an ECG file with diagnosis results
+        if ecg_file and "diagnosis_result" in ecg_file:
+            diagnosis_result = ecg_file["diagnosis_result"]
+            logging.info(f"[handle_export_report] Found diagnosis result for instance {instance_id}")
+            
+            # Extract diseases with probability > 0.03 from both models
+            threshold = 0.03
+            
+            # Check original_dnn_model
+            if "original_dnn_model" in diagnosis_result:
+                for disease, prob in diagnosis_result["original_dnn_model"].items():
+                    if prob > threshold and disease not in diseases:
+                        diseases.append(disease)
+            
+            # Check resnet_fine_tuned_model
+            if "resnet_fine_tuned_model" in diagnosis_result:
+                for disease, prob in diagnosis_result["resnet_fine_tuned_model"].items():
+                    if prob > threshold and disease not in diseases:
+                        diseases.append(disease)
+            
+          
+    
+    except Exception as e:
+        logging.error(f"[handle_export_report] Error extracting diseases from diagnosis result: {str(e)}", exc_info=True)
+        diseases = []
+    
+    
+    # If still no diseases, return message
+    if not diseases:
+        logging.warning(f"[handle_export_report] No diseases found for analysis for instance {instance_id}")
+        return ChatResponse(
+            message="No diseases detected for analysis. Cannot generate report.",
+            conversation_id=conversation_id
+        )
+    
+    logging.info(f"[handle_export_report] Using diseases for analysis: {diseases}")
+    logging.info(f"[handle_export_report] Generating report for instance {instance_id} with diseases: {diseases}")
+    
+    try:
+        # First, get the interpretation data from the AI server
+        import requests
+        from pathlib import Path
+        
+        # Prepare AI server request
+        ai_server_url = f"{os.getenv('AISERVER_URI')}/interprete/{instance_id}"
+        
+        # Get temporary token for authentication
+
+        temp_token = get_temp_token()
+        logging.info("[handle_export_report] Successfully obtained temporary token for interpretation request")
+        
+        # Prepare the form data
+        form_data_tuples = []
+        for disease in diseases:
+            form_data_tuples.append(("disease", disease))
+        
+        # Add the temporary token for authentication
+        form_data_tuples.append(("temp_token", temp_token))
+        
+        # Make the request to the AI server
+        try:
+            response = requests.post(
+                ai_server_url,
+                data=form_data_tuples,
+                timeout=60
+            )
+            
+            # Check if the request was successful
+            response.raise_for_status()
+            
+            # Parse the JSON response
+            ai_response = response.json()
+            logging.info(f"[handle_export_report] Received interpretation response from AI server for instance {instance_id}")
+            
+            # Define reports directory
+            ECG_REPORTS_DIR = Path(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "reports", "ecg"))
+            ECG_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+            
+            # Generate a PDF report from the interpretation data
+            pdf_filename = f"{instance_id}.pdf"
+            pdf_path = ECG_REPORTS_DIR / pdf_filename
+            
+            # Always generate a new PDF report
+            logging.info(f"[handle_export_report] Generating PDF report for instance {instance_id}")
+            from app.utils.report_generator import generate_ecg_report_pdf
+            generate_ecg_report_pdf(ai_response, pdf_path, instance_id)
+            
+            # Get the PDF download URL using the utility function
+            from app.utils.pdf_utils import get_report_download_url
+            pdf_url = get_report_download_url(pdf_filename)
+            
+            # Get patient information
+            patient = await db.get_patient(patient_id)
+            if not patient:
+                patient_name = "Unknown Patient"
+            else:
+                patient_name = patient.name
+            
+            # Create response message with download link
+            message = f"### ECG Report Generated Successfully\n\n"
+            message += f"**Patient:** {patient_name} (ID: {patient_id})\n"
+            message += f"**Instance ID:** {instance_id}\n"
+            message += f"**Analysis:** {', '.join(diseases)}\n\n"
+            message += f"[Download PDF Report]({pdf_url})\n\n"
+            message += "The report includes patient information, ECG data, and diagnostic results."
+            
             return ChatResponse(
-                message="Error generating PDF report. Please try again later.",
+                message=message,
+                conversation_id=conversation_id,
+                patient_context={
+                    "patient_id": patient_id,
+                    "patient_name": patient_name,
+                    "instance_id": instance_id,
+                    "report_url": pdf_url
+                }
+            )
+            
+        except requests.Timeout:
+            logging.error(f"[handle_export_report] Interpretation request timed out for instance {instance_id}")
+            return ChatResponse(
+                message="Interpretation request timed out, please try again later.",
                 conversation_id=conversation_id
             )
-        
-        # Get download URL - this will include AIAGENT_URL if available
-        download_url = get_report_download_url(file_name)
-        
-        # Create response message with download link
-        message = f"### ECG Report Generated Successfully\n\n"
-        message += f"**Patient:** {patient['name']} (ID: {patient['patient_id']})\n"
-        message += f"**Study Date:** {date_str}\n"
-        message += f"**Study Time:** {time_str}\n\n"
-        message += f"[Download PDF Report]({download_url})\n\n"
-        message += "The report includes patient information, ECG data, and diagnostic results."
-        
-        return ChatResponse(
-            message=message,
-            conversation_id=conversation_id,
-            patient_context={
-                "patient_id": patient_id,
-                "patient_name": patient['name'],
-                "study_date": date_str,
-                "study_time": time_str,
-                "report_url": download_url
-            }
-        )
+        except requests.HTTPError as e:
+            logging.error(f"[handle_export_report] AI server returned error for instance {instance_id}: {e.response.status_code} - {e.response.text}")
+            return ChatResponse(
+                message=f"AI server error: {e.response.text}",
+                conversation_id=conversation_id
+            )
+        except requests.RequestException as e:
+            logging.error(f"[handle_export_report] Network error during interpretation request for instance {instance_id}: {str(e)}")
+            return ChatResponse(
+                message="Unable to connect to AI server, please check network connection.",
+                conversation_id=conversation_id
+            )
+        except ValueError as e:
+            logging.error(f"[handle_export_report] Invalid JSON response from AI server for instance {instance_id}: {str(e)}")
+            return ChatResponse(
+                message="Invalid response from AI server.",
+                conversation_id=conversation_id
+            )
+            
     except Exception as e:
-        logging.error(f"[handle_export_report] Error generating PDF report: {str(e)}", exc_info=True)
+        import traceback
+        logging.error(f"[handle_export_report] Error generating PDF report: {str(e)}")
+        logging.error(f"[handle_export_report] Traceback: {traceback.format_exc()}")
         return ChatResponse(
-            message=f"Error generating PDF report: {str(e)}",
+            message=f"Failed to generate PDF report: {str(e)}",
             conversation_id=conversation_id
         )
 

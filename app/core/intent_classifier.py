@@ -26,7 +26,7 @@ app_logger.setLevel(logging.INFO)
 # Load environment variables
 load_dotenv()
 
-class IntentClassifier:
+class ApiIntentClassifier:
     def __init__(self):
         # Get API key from environment variables
         openai_api_key = os.getenv("OPENAI_API_KEY")
