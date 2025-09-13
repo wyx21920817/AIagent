@@ -952,23 +952,12 @@ async def handle_medical_question(extracted_info: Dict[str, Any], conversation_i
             ])
         )
         
-        # Include image URLs directly in the question if they exist
-        enhanced_question = question
-        if image_urls:
-            # Log the original question and image URLs for debugging
-            logging.info(f"[handle_medical_question] Original question: {question}")
-            logging.info(f"[handle_medical_question] Image URLs detected: {image_urls}")
-            
-            # Make sure the image URLs are part of the question
-            if not any(url in question for url in image_urls):
-                enhanced_question = f"{question}\n\nImage URLs for reference: {', '.join(image_urls)}"
-                logging.info(f"[handle_medical_question] Enhanced question with URLs: {enhanced_question}")
+        # Use the detected URLs from earlier
+        response = await chain.ainvoke({"question": question, "patient_info": patient_info, "image_info": image_info})
         
-        response = await chain.ainvoke({"question": enhanced_question, "patient_info": patient_info, "image_info": image_info})
-        
-        # If there are image URLs, add a note about image limitations
+        # If there are URLs in the question, add a note about image limitations
         message = response["text"]
-        if image_urls:
+        if all_urls:
             message += "\n\n*Note: As an AI assistant, I cannot directly view or analyze the images you've shared. For a proper analysis of medical images, please use the system's dedicated image analysis features.*"
         
         return ChatResponse(
