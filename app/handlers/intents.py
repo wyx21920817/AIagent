@@ -877,9 +877,39 @@ async def handle_medical_question(extracted_info: Dict[str, Any], conversation_i
     # Check if the question contains an image URL
     image_info = ""
     import re
-    # Match both standard image URLs and URLs that might contain image paths
-    url_pattern = r'https?://[^\s]+(?:\.(png|jpg|jpeg|gif|bmp|webp)|/[^\s]*(?:image|img|static/images)[^\s]*)'
-    image_urls = re.findall(url_pattern, question)
+    
+    # First try to match standard URLs with http:// or https:// prefix
+    url_pattern = r'((?:http|https)://[^\s]+)'
+    all_urls = re.findall(url_pattern, question)
+    
+    # Also check for URLs that might not have the standard prefix
+    # This could catch URLs like 70.30.158.224:46662/static/images/...
+    ip_url_pattern = r'\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?::\d+)?(?:/[^\s]+))'
+    ip_urls = re.findall(ip_url_pattern, question)
+    
+    # Add http:// prefix to IP URLs if they don't already have it
+    for ip_url in ip_urls:
+        if not any(ip_url in url for url in all_urls):
+            full_url = f"http://{ip_url}"
+            all_urls.append(full_url)
+    
+    # Log all detected URLs for debugging
+    if all_urls:
+        logging.info(f"[handle_medical_question] All detected URLs: {all_urls}")
+    
+    # Filter for likely image URLs, with special focus on medical image patterns
+    image_urls = []
+    medical_image_indicators = [
+        ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp",  # Common image extensions
+        "/image", "/img", "/static/images",  # Common image paths
+        "ecg", "ekg", "xray", "x-ray", "mri", "ct", "ultrasound",  # Medical imaging terms
+        "aflt", "multilead", "overview",  # ECG specific terms
+    ]
+    
+    for url in all_urls:
+        url_lower = url.lower()
+        if any(indicator in url_lower for indicator in medical_image_indicators):
+            image_urls.append(url)
     
     if image_urls:
         image_info = "\n\nThe user has shared the following image(s) for analysis:\n"
@@ -914,9 +944,11 @@ async def handle_medical_question(extracted_info: Dict[str, Any], conversation_i
                    - Mention typical reference ranges
                    - Suggest follow-up tests if needed
                 6. For image analysis:
-                   - If the user has shared image URLs, try to describe what the images likely contain
-                   - Explain that you cannot directly view the images but can provide general information
-                   - Suggest the user upload the images to the system for proper AI analysis
+                   - IMPORTANT: If the user has shared image URLs, ASSUME these are medical images (likely ECG or other diagnostic images)
+                   - If you see URLs in the user's question, acknowledge them and explain what type of medical image they likely are
+                   - For ECG images, explain that they typically show heart rhythm patterns and electrical activity
+                   - For images with 'aflt' or 'multilead' in the URL, explain these are likely atrial flutter or multi-lead ECG recordings
+                   - Explain that while you cannot directly view the images, the user should use the system's ECG analysis features
                 
                 Current patient context: {patient_info}{image_info}
                 """),
@@ -924,7 +956,19 @@ async def handle_medical_question(extracted_info: Dict[str, Any], conversation_i
             ])
         )
         
-        response = await chain.ainvoke({"question": question, "patient_info": patient_info, "image_info": image_info})
+        # Include image URLs directly in the question if they exist
+        enhanced_question = question
+        if image_urls:
+            # Log the original question and image URLs for debugging
+            logging.info(f"[handle_medical_question] Original question: {question}")
+            logging.info(f"[handle_medical_question] Image URLs detected: {image_urls}")
+            
+            # Make sure the image URLs are part of the question
+            if not any(url in question for url in image_urls):
+                enhanced_question = f"{question}\n\nImage URLs for reference: {', '.join(image_urls)}"
+                logging.info(f"[handle_medical_question] Enhanced question with URLs: {enhanced_question}")
+        
+        response = await chain.ainvoke({"question": enhanced_question, "patient_info": patient_info, "image_info": image_info})
         
         # If there are image URLs, add a note about image limitations
         message = response["text"]
