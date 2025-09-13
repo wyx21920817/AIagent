@@ -874,6 +874,21 @@ async def handle_medical_question(extracted_info: Dict[str, Any], conversation_i
         except Exception as e:
             logging.error(f"Error getting patient info: {e}")
     
+    # Check if the question contains an image URL
+    image_info = ""
+    import re
+    # Match both standard image URLs and URLs that might contain image paths
+    url_pattern = r'https?://[^\s]+(?:\.(png|jpg|jpeg|gif|bmp|webp)|/[^\s]*(?:image|img|static/images)[^\s]*)'
+    image_urls = re.findall(url_pattern, question)
+    
+    if image_urls:
+        image_info = "\n\nThe user has shared the following image(s) for analysis:\n"
+        for i, url in enumerate(image_urls):
+            image_info += f"Image {i+1}: {url}\n"
+        image_info += "\nPlease analyze these images as part of your response."
+        
+        logging.info(f"[handle_medical_question] Detected image URLs in question: {image_urls}")
+    
     # Create a new LLM chain to handle the question
     try:
         llm = ChatOpenAI(
@@ -898,16 +913,26 @@ async def handle_medical_question(extracted_info: Dict[str, Any], conversation_i
                    - Discuss potential implications
                    - Mention typical reference ranges
                    - Suggest follow-up tests if needed
+                6. For image analysis:
+                   - If the user has shared image URLs, try to describe what the images likely contain
+                   - Explain that you cannot directly view the images but can provide general information
+                   - Suggest the user upload the images to the system for proper AI analysis
                 
-                Current patient context: {patient_info}
+                Current patient context: {patient_info}{image_info}
                 """),
                 ("human", "{question}")
             ])
         )
         
-        response = await chain.ainvoke({"question": question, "patient_info": patient_info})
+        response = await chain.ainvoke({"question": question, "patient_info": patient_info, "image_info": image_info})
+        
+        # If there are image URLs, add a note about image limitations
+        message = response["text"]
+        if image_urls:
+            message += "\n\n*Note: As an AI assistant, I cannot directly view or analyze the images you've shared. For a proper analysis of medical images, please use the system's dedicated image analysis features.*"
+        
         return ChatResponse(
-            message=response["text"],
+            message=message,
             conversation_id=conversation_id,
             patient_context={"patient_id": patient_id} if patient_id else None
         )
