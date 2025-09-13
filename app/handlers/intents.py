@@ -770,18 +770,11 @@ async def handle_compare_patients(db, extracted_info: Dict[str, Any], conversati
     for ecg in ecg_records:
         diagnosis = await get_latest_diagnosis(db, patient_id, ecg.get('study_date'))
         if diagnosis:
-            # Add diagnostic results header
-            info_lines = [
-                "",
-                "Diagnostic Results:",
-                f"Diagnosis Result: {diagnosis.get('raw_results', {})}"
-            ]
-            
-            # Just use the raw diagnosis_result
+            # Just use the raw diagnosis
             comparisons.append({
                 "study_date": ecg.get('study_date', 'Unknown'),
                 "study_time": ecg.get('study_time', 'Unknown'),
-                "diagnosis_result": diagnosis.get('diagnosis_result', {})
+                "diagnosis": diagnosis
             })
     
     if not comparisons:
@@ -794,7 +787,7 @@ async def handle_compare_patients(db, extracted_info: Dict[str, Any], conversati
     table = [
         f"ECG Comparison for Patient: {patient.name}",
         "-" * 70,
-        f"{'Date':10} | {'Time':8} | {'Diagnosis Result'}",
+        f"{'Date':10} | {'Time':8} | {'Diagnosis'}",
         "-" * 70
     ]
     
@@ -805,7 +798,7 @@ async def handle_compare_patients(db, extracted_info: Dict[str, Any], conversati
         date = c['study_date'][:4] + '-' + c['study_date'][4:6] + '-' + c['study_date'][6:] if len(c['study_date']) == 8 else c['study_date']
         time = c['study_time'][:2] + ':' + c['study_time'][2:4] if len(c['study_time']) >= 4 else c['study_time']
         table.append(
-            f"{date:10} | {time:8} | {c['diagnosis_result']}"
+            f"{date:10} | {time:8} | {c['diagnosis']}"
         )
     
     return ChatResponse(
