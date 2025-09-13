@@ -239,24 +239,24 @@ async def handle_analyze_ecg(db, extracted_info: Dict[str, Any], conversation_id
     prob_lines = []
     
     # DNN model probabilities (Arrhythmia Analysis)
-    dnn_probs = probabilities.get('original dnn model', {})
+    dnn_probs = diagnosis_result.get('original_dnn_model', {})
     if dnn_probs:
         arrhythmia_types = {
-            '1dAVb': 'First-degree AV block',
+            '1dAVB': 'First-degree AV block',
             'RBBB': 'Right Bundle Branch Block',
             'LBBB': 'Left Bundle Branch Block',
-            'SB': 'Sinus Bradycardia',
-            'AF': 'Atrial Fibrillation',
-            'ST': 'Sinus Tachycardia'
+            'SBRAD': 'Sinus Bradycardia',
+            'AFIB': 'Atrial Fibrillation',
+            'STACH': 'Sinus Tachycardia'
         }
         prob_lines.append("\nArrhythmia Analysis:")
         for condition, prob in dnn_probs.items():
             if isinstance(prob, (int, float)) and float(prob) > 0.01:  # Only show if probability > 1%
                 condition_name = arrhythmia_types.get(condition, condition)
-                prob_lines.append(f"- {condition_name}: {float(prob):.1%}")
+                prob_lines.append(f"- {condition_name}: {float(prob)*100:.1f}%")
     
     # ResNet model probabilities (Morphological Analysis)
-    resnet_probs = probabilities.get('resnet fine tuned model', {})
+    resnet_probs = diagnosis_result.get('resnet_fine_tuned_model', {})
     if resnet_probs:
         morphology_types = {
             'NORM': 'Normal',
@@ -303,8 +303,7 @@ async def handle_analyze_ecg(db, extracted_info: Dict[str, Any], conversation_id
                 "\n".join(prob_lines),
         conversation_id=conversation_id,
         metadata={
-            "diagnosis": diagnosis,
-            "probabilities": probabilities,
+            "diagnosis_result": diagnosis_result,
             "patient_context": {
                 "patient_id": patient_id,
                 "patient_name": result['patient']['name'],
