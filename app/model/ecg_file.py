@@ -1,4 +1,4 @@
-from mongoengine import Document, StringField, ReferenceField, ListField, DictField, DateTimeField
+from mongoengine import Document, StringField, ReferenceField, ListField, DictField, DateTimeField, BooleanField
 from datetime import datetime
 from .user import User
 from .patient import Patient
@@ -13,6 +13,7 @@ class EcgFile(Document):
     instanceIDs = ListField(StringField(), default=list)  # Store all related instance IDs
     created_at = DateTimeField(default=datetime.utcnow)
     updated_at = DateTimeField(default=datetime.utcnow)
+    Approved_status = BooleanField(default=False)
 
     meta = {
         'collection': 'ecg_files',
