@@ -196,8 +196,8 @@ AI Doctor: Let me help you analyze this case."""
                     # Export report as PDF
                     response = await handle_export_report(self.db, intent_result.extracted_info, conversation_id)
                 elif intent_result.intent == Intent.MEDICAL_QUESTION:
-                    # Answer medical questions
-                    response = await handle_medical_question(intent_result.extracted_info, conversation_id)
+                    # Answer medical questions - pass original message to preserve URLs
+                    response = await handle_medical_question(intent_result.extracted_info, conversation_id, original_input=message)
                 else:
                     response = ChatResponse(
                         message="Sorry, I cannot handle this type of request at the moment.",

@@ -841,12 +841,21 @@ async def handle_compare_patients(db, extracted_info: Dict[str, Any], conversati
         }
     )
 
-async def handle_medical_question(extracted_info: Dict[str, Any], conversation_id: str) -> ChatResponse:
+async def handle_medical_question(extracted_info: Dict[str, Any], conversation_id: str, original_input: str = None) -> ChatResponse:
     """Handle general medical questions using OpenAI"""
     # Get question and patient info
     question = extracted_info.get("question")
     patient_id = extracted_info.get("patient_id")
     response = extracted_info.get("response")
+    
+    # Always use original input if provided (this will contain the original URLs)
+    if original_input:
+        logging.info(f"[handle_medical_question] Original input: {original_input}")
+        logging.info(f"[handle_medical_question] Extracted question: {question}")
+        
+        # Simply use the original input as the question
+        question = original_input
+        logging.info(f"[handle_medical_question] Using original input directly: {question}")
     
     if not question:
         return ChatResponse(
@@ -874,50 +883,37 @@ async def handle_medical_question(extracted_info: Dict[str, Any], conversation_i
         except Exception as e:
             logging.error(f"Error getting patient info: {e}")
     
-    # Check if the question contains an image URL
-    image_info = ""
+    # Check if the question contains an image URL (for logging purposes only)
     import re
     
-    # First try to match standard URLs with http:// or https:// prefix
+    # Match both standard URLs and IP-based URLs
     url_pattern = r'((?:http|https)://[^\s]+)'
-    all_urls = re.findall(url_pattern, question)
-    
-    # Also check for URLs that might not have the standard prefix
-    # This could catch URLs like 70.30.158.224:46662/static/images/...
     ip_url_pattern = r'\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?::\d+)?(?:/[^\s]+))'
+    
+    # Find all URLs in the question
+    all_urls = re.findall(url_pattern, question)
     ip_urls = re.findall(ip_url_pattern, question)
     
-    # Add http:// prefix to IP URLs if they don't already have it
+    # Add http:// prefix to IP URLs
     for ip_url in ip_urls:
         if not any(ip_url in url for url in all_urls):
             full_url = f"http://{ip_url}"
             all_urls.append(full_url)
     
-    # Log all detected URLs for debugging
+    # Log detected URLs for debugging
     if all_urls:
-        logging.info(f"[handle_medical_question] All detected URLs: {all_urls}")
-    
-    # Filter for likely image URLs, with special focus on medical image patterns
-    image_urls = []
-    medical_image_indicators = [
-        ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp",  # Common image extensions
-        "/image", "/img", "/static/images",  # Common image paths
-        "ecg", "ekg", "xray", "x-ray", "mri", "ct", "ultrasound",  # Medical imaging terms
-        "aflt", "multilead", "overview",  # ECG specific terms
-    ]
-    
-    for url in all_urls:
-        url_lower = url.lower()
-        if any(indicator in url_lower for indicator in medical_image_indicators):
-            image_urls.append(url)
-    
-    if image_urls:
-        image_info = "\n\nThe user has shared the following image(s) for analysis:\n"
-        for i, url in enumerate(image_urls):
-            image_info += f"Image {i+1}: {url}\n"
-        image_info += "\nPlease analyze these images as part of your response."
+        logging.info(f"[handle_medical_question] Detected URLs in question: {all_urls}")
         
-        logging.info(f"[handle_medical_question] Detected image URLs in question: {image_urls}")
+    # Create image_info for the prompt (empty string as we're using the original question directly)
+    image_info = ""
+    
+    # We're using the original input directly, so we don't need to filter URLs
+    # Just log the URLs for debugging purposes
+    if all_urls:
+        logging.info(f"[handle_medical_question] Using original input with URLs: {all_urls}")
+    
+    # Set image_info to empty string as we're using the original question directly
+    image_info = ""
     
     # Create a new LLM chain to handle the question
     try:
