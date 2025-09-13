@@ -66,7 +66,7 @@ async def get_latest_diagnosis(db: Database, patient_id: str, study_date: Option
                 logging.info(f"[get_latest_diagnosis] Diagnosis not from specified date {study_date} for patient {patient_id}")
                 return None
         
-        logging.info(f"[get_latest_diagnosis] Found diagnosis for patient {patient_id}")
+        logging.info(f"[get_latest_diagnosis] Found diagnosis for patient {patient_id},{diagnosis}")
         return diagnosis
         
     except Exception as e:
