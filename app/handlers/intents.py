@@ -217,18 +217,25 @@ async def handle_analyze_ecg(db, extracted_info: Dict[str, Any], conversation_id
             conversation_id=conversation_id
         )
     
-    # Get diagnosis from ECG data
+    # Get ECG data
     ecg_data = result["ecg_data"]
-    diagnosis = ecg_data.get("diagnosis", {})
-    if not diagnosis:
+    
+    # Get the diagnosis_result directly from the raw_results field
+    # This is the format you showed in your example with original_dnn_model and resnet_fine_tuned_model
+    diagnosis_result = ecg_data.get("diagnosis", {}).get("raw_results", {})
+    
+    # Check if we have any diagnosis data
+    if not diagnosis_result:
         logging.warning(f"[handle_analyze_ecg] No diagnosis data found for patient {patient_id}")
         return ChatResponse(
             message="No diagnosis data found for this patient.",
             conversation_id=conversation_id
         )
     
-    # Format diagnosis probabilities
-    probabilities = diagnosis.get('probabilities', {})
+    # Log the diagnosis_result for debugging
+    logging.info(f"[handle_analyze_ecg] Diagnosis result: {diagnosis_result}")
+    
+    # Format diagnosis probabilities directly from the diagnosis_result
     prob_lines = []
     
     # DNN model probabilities (Arrhythmia Analysis)
@@ -266,15 +273,27 @@ async def handle_analyze_ecg(db, extracted_info: Dict[str, Any], conversation_id
     
     logging.info(f"[handle_analyze_ecg] Analyzed ECG for patient {patient_id} with diagnosis probabilities")
     
-    # Get the interpretation from diagnosis
-    interpretation = diagnosis.get('interpretation', 'Not Available')
+    # Generate a simple interpretation based on the diagnosis_result
+    formatted_interpretation = "- No significant abnormalities detected"
     
-    # Format the interpretation to make it look better
-    formatted_interpretation = interpretation
-    if ", " in interpretation:
-        # Split by comma if there are multiple analyses
-        analyses = interpretation.split(", ")
-        formatted_interpretation = "\n".join([f"- {analysis}" for analysis in analyses])
+    # Check if we have significant findings in DNN model
+    dnn_probs = diagnosis_result.get('original_dnn_model', {})
+    if dnn_probs:
+        max_dnn_key = max(dnn_probs.items(), key=lambda x: float(x[1]))[0]
+        max_dnn_prob = float(dnn_probs[max_dnn_key])
+        if max_dnn_prob > 0.01:
+            formatted_interpretation = f"- Rhythm Analysis: {max_dnn_key} (Confidence: {max_dnn_prob*100:.1f}%)"
+    
+    # Check if we have significant findings in ResNet model
+    resnet_probs = diagnosis_result.get('resnet_fine_tuned_model', {})
+    if resnet_probs:
+        max_resnet_key = max(resnet_probs.items(), key=lambda x: float(x[1]))[0]
+        max_resnet_prob = float(resnet_probs[max_resnet_key])
+        if max_resnet_prob > 0.01:
+            if formatted_interpretation == "- No significant abnormalities detected":
+                formatted_interpretation = f"- Morphology Analysis: {max_resnet_key} (Confidence: {max_resnet_prob*100:.1f}%)"
+            else:
+                formatted_interpretation += f"\n- Morphology Analysis: {max_resnet_key} (Confidence: {max_resnet_prob*100:.1f}%)"
     
     return ChatResponse(
         message=f"ECG Analysis for {result['patient']['name']}:\n\n" + 
@@ -384,32 +403,87 @@ async def handle_view_ecg(db, extracted_info: Dict[str, Any], conversation_id: s
             ])
     
     # Add diagnosis if available
-    diagnosis = ecg_data.get('diagnosis', {})
-    if diagnosis:
+    diagnosis_info = ecg_data.get('diagnosis', {})
+    diagnosis_result = diagnosis_info.get('raw_results', {})
+    
+    if diagnosis_result:
+        # Generate interpretation based on diagnosis_result
+        formatted_interpretation = "- No significant abnormalities detected"
+        
+        # Check if we have significant findings in DNN model
+        dnn_probs = diagnosis_result.get('original_dnn_model', {})
+        if dnn_probs:
+            max_dnn_key = max(dnn_probs.items(), key=lambda x: float(x[1]))[0]
+            max_dnn_prob = float(dnn_probs[max_dnn_key])
+            if max_dnn_prob > 0.01:
+                formatted_interpretation = f"- Rhythm Analysis: {max_dnn_key} (Confidence: {max_dnn_prob*100:.1f}%)"
+        
+        # Check if we have significant findings in ResNet model
+        resnet_probs = diagnosis_result.get('resnet_fine_tuned_model', {})
+        if resnet_probs:
+            max_resnet_key = max(resnet_probs.items(), key=lambda x: float(x[1]))[0]
+            max_resnet_prob = float(resnet_probs[max_resnet_key])
+            if max_resnet_prob > 0.01:
+                if formatted_interpretation == "- No significant abnormalities detected":
+                    formatted_interpretation = f"- Morphology Analysis: {max_resnet_key} (Confidence: {max_resnet_prob*100:.1f}%)"
+                else:
+                    formatted_interpretation += f"\n- Morphology Analysis: {max_resnet_key} (Confidence: {max_resnet_prob*100:.1f}%)"
+        
+        # Add diagnostic results header
         info_lines.extend([
             "",
             "Diagnostic Results:",
-            f"- Heart Rate: {diagnosis.get('heart_rate', 'Not Available')} BPM",
-            f"- Rhythm: {diagnosis.get('rhythm', 'Not Available')}",
-            f"- Interpretation: {diagnosis.get('interpretation', 'Waiting for AI model analysis...')}"
+            "Interpretation:",
+            formatted_interpretation
         ])
         
-        # Add detailed probabilities if available
-        probabilities = diagnosis.get('probabilities', {})
+        # Add model analysis results header
+        info_lines.extend([
+            "",
+            "Model Analysis Results:"
+        ])
         
         # DNN model (Arrhythmia Analysis)
-        dnn_probs = probabilities.get('original dnn model', {})
+        dnn_probs = diagnosis.get('original_dnn_model', diagnosis.get('original dnn model', {}))
         if dnn_probs:
-            max_prob = max(dnn_probs.items(), key=lambda x: float(x[1]))
-            if float(max_prob[1]) > 0.5:
-                info_lines.append(f"- Arrhythmia: {max_prob[0]} ({float(max_prob[1]):.1%})")
+            # Convert all values to float for comparison
+            float_probs = {k: float(v) for k, v in dnn_probs.items()}
+            
+            # Find the maximum probability
+            if float_probs:
+                max_key = max(float_probs, key=float_probs.get)
+                max_prob = float_probs[max_key]
+                
+                # Only add arrhythmia analysis if there's a significant probability
+                if max_prob > 0.01:
+                    info_lines.append("Arrhythmia Analysis:")
+                    info_lines.append(f"- {max_key}: {max_prob*100:.1f}%")
+                else:
+                    # If all probabilities are very low, indicate normal rhythm
+                    info_lines.append("Arrhythmia Analysis:")
+                    info_lines.append("- Normal Sinus Rhythm (inferred from low arrhythmia probabilities)")
+            else:
+                info_lines.append("Arrhythmia Analysis: No data available")
         
         # ResNet model (Morphological Analysis)
-        resnet_probs = probabilities.get('resnet fine tuned model', {})
+        resnet_probs = diagnosis_result.get('resnet_fine_tuned_model', diagnosis_result.get('resnet fine tuned model', {}))
         if resnet_probs:
-            max_prob = max(resnet_probs.items(), key=lambda x: float(x[1]))
-            if float(max_prob[1]) > 50.0:  # ResNet probabilities are 0-100
-                info_lines.append(f"- Morphology: {max_prob[0]} ({float(max_prob[1]):.1f}%)")
+            # Convert all values to float for comparison
+            float_probs = {k: float(v) for k, v in resnet_probs.items()}
+            
+            # Find the maximum probability
+            if float_probs:
+                max_key = max(float_probs, key=float_probs.get)
+                max_prob = float_probs[max_key]
+                
+                # Format probability based on its range
+                if max_prob > 0.01:  # Only show if probability > 1%
+                    info_lines.append("Morphological Analysis:")
+                    # Format the probability display
+                    prob_display = f"{max_prob*100:.1f}%"
+                    info_lines.append(f"- {max_key}: {prob_display}")
+            else:
+                info_lines.append("Morphological Analysis: No data available")
     
     return ChatResponse(
         message="\n".join(info_lines),

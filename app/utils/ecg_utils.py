@@ -57,21 +57,26 @@ def interpret_diagnosis(diagnosis_result: Dict) -> Dict:
             try:
                 # Convert all values to float for comparison
                 float_results = {k: float(v) for k, v in dnn_results.items()}
-                dnn_max = max(float_results.items(), key=lambda x: x[1])
-                prob = dnn_max[1]
                 
-                # If highest probability is very low, likely normal rhythm
-                if prob < 0.01:
-                    rhythm = "Normal Sinus Rhythm"
-                    conditions.append(f"Rhythm Analysis: Normal Sinus Rhythm (inferred from low arrhythmia probabilities)")
+                # Find the maximum probability
+                if float_results:
+                    max_key = max(float_results, key=float_results.get)
+                    max_prob = float_results[max_key]
+                    
+                    # If highest probability is very low, likely normal rhythm
+                    if max_prob < 0.01:
+                        rhythm = "Normal Sinus Rhythm"
+                        conditions.append(f"Rhythm Analysis: Normal Sinus Rhythm (inferred from low arrhythmia probabilities)")
+                    else:
+                        # Use the highest probability arrhythmia
+                        condition = arrhythmia_types.get(max_key, max_key)
+                        rhythm = condition
+                        # Format with confidence percentage
+                        conditions.append(f"Rhythm Analysis: {condition} (Confidence: {max_prob*100:.1f}%)")
+                        # Example: "Rhythm Analysis: Atrial Fibrillation (Confidence: 7.4%)")
                 else:
-                    # Use the highest probability arrhythmia
-                    condition_key = dnn_max[0]
-                    condition = arrhythmia_types.get(condition_key, condition_key)
-                    rhythm = condition
-                    # Format with confidence percentage
-                    conditions.append(f"Rhythm Analysis: {condition} (Confidence: {prob*100:.1f}%)")
-                    # Example: "Rhythm Analysis: Atrial Fibrillation (Confidence: 7.4%)"
+                    rhythm = "Not Available"
+                    conditions.append("Rhythm Analysis: No data available")
             except (ValueError, TypeError) as e:
                 logging.warning(f"Could not determine rhythm from DNN results: {dnn_results}, error: {str(e)}")
                 rhythm = "Normal Sinus Rhythm (default)"
@@ -82,39 +87,41 @@ def interpret_diagnosis(diagnosis_result: Dict) -> Dict:
             try:
                 # Convert all values to float for comparison
                 float_results = {k: float(v) for k, v in resnet_results.items()}
-                resnet_max = max(float_results.items(), key=lambda x: x[1])
-                prob = resnet_max[1]  # ResNet probabilities might be 0-1 or 0-100
                 
-                # Define morphology types
-                morphology_types = {
-                    'NORM': 'Normal',
-                    'STTC': 'ST-T Changes',
-                    'MI': 'Myocardial Infarction',
-                    'HYP': 'Left Ventricular Hypertrophy',
-                    'CD': 'Cardiac Disease',
-                    'RBBB': 'Right Bundle Branch Block',
-                    '1dAVB': 'First-degree AV Block',
-                    '2dAVB': 'Second-degree AV Block',
-                    '3dAVB': 'Third-degree AV Block'
-                }
-                
-                # Get the condition name
-                condition_key = resnet_max[0]
-                condition = morphology_types.get(condition_key, condition_key)
-                morphology_condition = condition
-                
-                # Format the probability based on its range
-                if prob > 1:  # If it's in 0-100 range
-                    prob_display = f"{prob:.1f}%"
-                else:  # If it's in 0-1 range
-                    prob_display = f"{prob*100:.1f}%"
-                
-                conditions.append(f"Morphology Analysis: {condition} (Confidence: {prob_display})")
-                # Example: "Morphology Analysis: AFLT (Confidence: 81.9%)"
-                
-                # If it's NORM with high probability and rhythm is still not available
-                if condition_key == 'NORM' and prob > 0.4 and rhythm == 'Not Available':
-                    rhythm = "Normal Sinus Rhythm"
+                # Find the maximum probability
+                if float_results:
+                    max_key = max(float_results, key=float_results.get)
+                    max_prob = float_results[max_key]
+                    
+                    # Define morphology types
+                    morphology_types = {
+                        'NORM': 'Normal',
+                        'STTC': 'ST-T Changes',
+                        'MI': 'Myocardial Infarction',
+                        'HYP': 'Left Ventricular Hypertrophy',
+                        'CD': 'Cardiac Disease',
+                        'RBBB': 'Right Bundle Branch Block',
+                        '1dAVB': 'First-degree AV Block',
+                        '2dAVB': 'Second-degree AV Block',
+                        '3dAVB': 'Third-degree AV Block'
+                    }
+                    
+                    # Only add morphology analysis if there's a significant probability
+                    if max_prob > 0.01:  # Only show if probability > 1%
+                        # Get the condition name
+                        condition = morphology_types.get(max_key, max_key)
+                        morphology_condition = condition
+                        
+                        # Format the probability display
+                        prob_display = f"{max_prob*100:.1f}%"
+                        
+                        conditions.append(f"Morphology Analysis: {condition} (Confidence: {prob_display})")
+                        
+                        # If it's NORM with high probability and rhythm is still not available
+                        if max_key == 'NORM' and max_prob > 0.4 and rhythm == 'Not Available':
+                            rhythm = "Normal Sinus Rhythm"
+                else:
+                    conditions.append("Morphology Analysis: No significant findings")
                 
             except (ValueError, TypeError) as e:
                 logging.warning(f"Could not determine morphology from ResNet results: {resnet_results}, error: {str(e)}")
