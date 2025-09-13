@@ -266,19 +266,20 @@ async def handle_analyze_ecg(db, extracted_info: Dict[str, Any], conversation_id
     
     logging.info(f"[handle_analyze_ecg] Analyzed ECG for patient {patient_id} with diagnosis probabilities")
     
-    # Return analysis results with heart rate and rhythm information
-    heart_rate = diagnosis.get('heart_rate', 'Not Available')
-    rhythm = diagnosis.get('rhythm', 'Not Available')
+    # Get the interpretation from diagnosis
+    interpretation = diagnosis.get('interpretation', 'Not Available')
     
-    # Format heart rate with BPM if available
-    heart_rate_display = f"{heart_rate} BPM" if heart_rate != 'Not Available' else "Not Available BPM"
+    # Format the interpretation to make it look better
+    formatted_interpretation = interpretation
+    if ", " in interpretation:
+        # Split by comma if there are multiple analyses
+        analyses = interpretation.split(", ")
+        formatted_interpretation = "\n".join([f"- {analysis}" for analysis in analyses])
     
     return ChatResponse(
         message=f"ECG Analysis for {result['patient']['name']}:\n\n" + 
                 "Diagnostic Results:\n" + 
-                f"- Heart Rate: {heart_rate_display}\n" + 
-                f"- Rhythm: {rhythm}\n" + 
-                f"- Interpretation: {diagnosis.get('interpretation', 'Not Available')}\n\n" + 
+                f"Interpretation:\n{formatted_interpretation}\n\n" + 
                 "Model Analysis Results:\n" + 
                 "\n".join(prob_lines),
         conversation_id=conversation_id,
@@ -883,35 +884,6 @@ async def handle_medical_question(extracted_info: Dict[str, Any], conversation_i
         except Exception as e:
             logging.error(f"Error getting patient info: {e}")
     
-    # Check if the question contains an image URL (for logging purposes only)
-    import re
-    
-    # Match both standard URLs and IP-based URLs
-    url_pattern = r'((?:http|https)://[^\s]+)'
-    ip_url_pattern = r'\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?::\d+)?(?:/[^\s]+))'
-    
-    # Find all URLs in the question
-    all_urls = re.findall(url_pattern, question)
-    ip_urls = re.findall(ip_url_pattern, question)
-    
-    # Add http:// prefix to IP URLs
-    for ip_url in ip_urls:
-        if not any(ip_url in url for url in all_urls):
-            full_url = f"http://{ip_url}"
-            all_urls.append(full_url)
-    
-    # Log detected URLs for debugging
-    if all_urls:
-        logging.info(f"[handle_medical_question] Detected URLs in question: {all_urls}")
-        
-    # Create image_info for the prompt (empty string as we're using the original question directly)
-    image_info = ""
-    
-    # We're using the original input directly, so we don't need to filter URLs
-    # Just log the URLs for debugging purposes
-    if all_urls:
-        logging.info(f"[handle_medical_question] Using original input with URLs: {all_urls}")
-    
     # Set image_info to empty string as we're using the original question directly
     image_info = ""
     
@@ -952,13 +924,9 @@ async def handle_medical_question(extracted_info: Dict[str, Any], conversation_i
             ])
         )
         
-        # Use the detected URLs from earlier
+        # Simply invoke the chain with the original question
         response = await chain.ainvoke({"question": question, "patient_info": patient_info, "image_info": image_info})
-        
-        # If there are URLs in the question, add a note about image limitations
         message = response["text"]
-        if all_urls:
-            message += "\n\n*Note: As an AI assistant, I cannot directly view or analyze the images you've shared. For a proper analysis of medical images, please use the system's dedicated image analysis features.*"
         
         return ChatResponse(
             message=message,

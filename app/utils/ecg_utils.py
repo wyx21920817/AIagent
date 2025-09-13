@@ -69,7 +69,9 @@ def interpret_diagnosis(diagnosis_result: Dict) -> Dict:
                     condition_key = dnn_max[0]
                     condition = arrhythmia_types.get(condition_key, condition_key)
                     rhythm = condition
-                    conditions.append(f"Rhythm Analysis: {condition} (Confidence: {prob:.1%})")
+                    # Format with confidence percentage
+                    conditions.append(f"Rhythm Analysis: {condition} (Confidence: {prob*100:.1f}%)")
+                    # Example: "Rhythm Analysis: Atrial Fibrillation (Confidence: 7.4%)"
             except (ValueError, TypeError) as e:
                 logging.warning(f"Could not determine rhythm from DNN results: {dnn_results}, error: {str(e)}")
                 rhythm = "Normal Sinus Rhythm (default)"
@@ -105,9 +107,10 @@ def interpret_diagnosis(diagnosis_result: Dict) -> Dict:
                 if prob > 1:  # If it's in 0-100 range
                     prob_display = f"{prob:.1f}%"
                 else:  # If it's in 0-1 range
-                    prob_display = f"{prob:.1%}"
+                    prob_display = f"{prob*100:.1f}%"
                 
                 conditions.append(f"Morphology Analysis: {condition} (Confidence: {prob_display})")
+                # Example: "Morphology Analysis: AFLT (Confidence: 81.9%)"
                 
                 # If it's NORM with high probability and rhythm is still not available
                 if condition_key == 'NORM' and prob > 0.4 and rhythm == 'Not Available':
