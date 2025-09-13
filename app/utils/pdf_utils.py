@@ -151,8 +151,6 @@ def generate_pdf_report(patient_info, ecg_data, diagnosis_data, ecg_image_path=N
             elements.append(Paragraph("Diagnostic Results", heading_style))
             
             diagnosis_data_table = [
-                ["Heart Rate:", f"{diagnosis_data.get('heart_rate', 'Not Available')} BPM"],
-                ["Rhythm:", diagnosis_data.get('rhythm', 'Not Available')],
                 ["Interpretation:", diagnosis_data.get('interpretation', 'Not Available')]
             ]
             
