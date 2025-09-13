@@ -137,14 +137,12 @@ async def handle_patient_query(extracted_info: Dict[str, Any], conversation_id: 
     try:
         diagnosis = await get_latest_diagnosis(db, patient.patient_id)
         if diagnosis:
-            # Simply get the diagnosis_result
-            diagnosis_result = diagnosis.get('diagnosis_result', {})
-            
+            # diagnosis已经是diagnosis_result了，直接使用
             info.extend([
                 "",
                 "Latest Diagnosis:",
                 f"Date: {diagnosis.get('diagnosis_time', 'Unknown')}",
-                f"Diagnosis Result: {diagnosis_result}"
+                f"Diagnosis Result: {diagnosis}"
             ])
     except Exception as e:
         logging.error(f"[handle_patient_query] Error getting diagnosis: {str(e)}")
@@ -211,26 +209,23 @@ async def handle_analyze_ecg(db, extracted_info: Dict[str, Any], conversation_id
     # Get ECG data
     ecg_data = result["ecg_data"]
     
-    # Get the diagnosis_result directly from the raw_results field
-    # This is the format you showed in your example with original_dnn_model and resnet_fine_tuned_model
-    diagnosis_result = ecg_data.get("diagnosis", {}).get("raw_results", {})
-    
-    # Check if we have any diagnosis data
-    if not diagnosis_result:
-        logging.warning(f"[handle_analyze_ecg] No diagnosis data found for patient {patient_id}")
+    # Get the latest diagnosis directly
+    diagnosis = await get_latest_diagnosis(db, patient_id)
+    if not diagnosis:
+        logging.warning(f"[handle_analyze_ecg] No diagnosis found for patient {patient_id}")
         return ChatResponse(
-            message="No diagnosis data found for this patient.",
+            message="No diagnosis found for this patient.",
             conversation_id=conversation_id
         )
     
-    # Log the diagnosis_result for debugging
-    logging.info(f"[handle_analyze_ecg] Diagnosis result: {diagnosis_result}")
+    # Log the diagnosis for debugging
+    logging.info(f"[handle_analyze_ecg] Diagnosis: {diagnosis}")
     
-    # Format diagnosis probabilities directly from the diagnosis_result
+    # Format diagnosis probabilities directly from the diagnosis
     prob_lines = []
     
     # DNN model probabilities (Arrhythmia Analysis)
-    dnn_probs = diagnosis_result.get('original_dnn_model', {})
+    dnn_probs = diagnosis.get('original_dnn_model', {})
     if dnn_probs:
         arrhythmia_types = {
             '1dAVB': 'First-degree AV block',
@@ -247,7 +242,7 @@ async def handle_analyze_ecg(db, extracted_info: Dict[str, Any], conversation_id
                 prob_lines.append(f"- {condition_name}: {float(prob)*100:.1f}%")
     
     # ResNet model probabilities (Morphological Analysis)
-    resnet_probs = diagnosis_result.get('resnet_fine_tuned_model', {})
+    resnet_probs = diagnosis.get('resnet_fine_tuned_model', {})
     if resnet_probs:
         morphology_types = {
             'NORM': 'Normal',
@@ -264,8 +259,8 @@ async def handle_analyze_ecg(db, extracted_info: Dict[str, Any], conversation_id
     
     logging.info(f"[handle_analyze_ecg] Analyzed ECG for patient {patient_id} with diagnosis probabilities")
     
-    # Just use the raw diagnosis_result
-    formatted_diagnosis = f"Diagnosis Result: {diagnosis_result}"
+    # Just use the raw diagnosis
+    formatted_diagnosis = f"Diagnosis Result: {diagnosis}"
     
     return ChatResponse(
         message=f"ECG Analysis for {result['patient']['name']}:\n\n" + 
@@ -275,7 +270,7 @@ async def handle_analyze_ecg(db, extracted_info: Dict[str, Any], conversation_id
                 "\n".join(prob_lines),
         conversation_id=conversation_id,
         metadata={
-            "diagnosis_result": diagnosis_result,
+            "diagnosis": diagnosis,
             "patient_context": {
                 "patient_id": patient_id,
                 "patient_name": result['patient']['name'],
@@ -373,16 +368,15 @@ async def handle_view_ecg(db, extracted_info: Dict[str, Any], conversation_id: s
                 "Error: Could not generate ECG waveform plot."
             ])
     
-    # Add diagnosis if available
-    diagnosis_info = ecg_data.get('diagnosis', {})
-    diagnosis_result = diagnosis_info.get('raw_results', {})
+    # Get the latest diagnosis directly
+    diagnosis = await get_latest_diagnosis(db, patient_id)
     
-    if diagnosis_result:
-        # Simply show the raw diagnosis_result
+    if diagnosis:
+        # Simply show the raw diagnosis
         info_lines.extend([
             "",
             "Diagnostic Results:",
-            f"Diagnosis Result: {diagnosis_result}"
+            f"Diagnosis Result: {diagnosis}"
         ])
         
         # We don't need to add model analysis results anymore since we're showing the raw diagnosis_result
