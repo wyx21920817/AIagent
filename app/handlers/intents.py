@@ -137,13 +137,28 @@ async def handle_patient_query(extracted_info: Dict[str, Any], conversation_id: 
     try:
         diagnosis = await get_latest_diagnosis(db, patient.patient_id)
         if diagnosis:
-            # diagnosis已经是diagnosis_result了，直接使用
+            # Format diagnostic results display
             info.extend([
                 "",
                 "Latest Diagnosis:",
-                f"Date: {diagnosis.get('diagnosis_time', 'Unknown')}",
-                f"Diagnosis Result: {diagnosis}"
+                f"Date: {diagnosis.get('diagnosis_time', 'Unknown')}"
             ])
+            
+            # Format DNN model results
+            dnn_probs = diagnosis.get('original_dnn_model', {})
+            if dnn_probs:
+                info.append("\nArrhythmia Analysis (DNN Model):")
+                for condition, prob in sorted(dnn_probs.items(), key=lambda x: float(x[1]), reverse=True):
+                    if float(prob) > 0.01:  # Only show results with probability > 1%
+                        info.append(f"- {condition}: {float(prob)*100:.1f}%")
+            
+            # Format ResNet model results
+            resnet_probs = diagnosis.get('resnet_fine_tuned_model', {})
+            if resnet_probs:
+                info.append("\nMorphological Analysis (ResNet Model):")
+                for condition, prob in sorted(resnet_probs.items(), key=lambda x: float(x[1]), reverse=True):
+                    if float(prob) > 0.01:  # Only show results with probability > 1%
+                        info.append(f"- {condition}: {float(prob)*100:.1f}%")
     except Exception as e:
         logging.error(f"[handle_patient_query] Error getting diagnosis: {str(e)}")
     
@@ -259,15 +274,28 @@ async def handle_analyze_ecg(db, extracted_info: Dict[str, Any], conversation_id
     
     logging.info(f"[handle_analyze_ecg] Analyzed ECG for patient {patient_id} with diagnosis probabilities")
     
-    # Just use the raw diagnosis
-    formatted_diagnosis = f"Diagnosis Result: {diagnosis}"
+    # Format diagnostic results
+    formatted_lines = ["Diagnostic Results:"]
+    
+    # Format DNN model results
+    dnn_probs = diagnosis.get('original_dnn_model', {})
+    if dnn_probs:
+        formatted_lines.append("\nArrhythmia Analysis (DNN Model):")
+        for condition, prob in sorted(dnn_probs.items(), key=lambda x: float(x[1]), reverse=True):
+            if float(prob) > 0.01:  # Only show results with probability > 1%
+                formatted_lines.append(f"- {condition}: {float(prob)*100:.1f}%")
+    
+    # Format ResNet model results
+    resnet_probs = diagnosis.get('resnet_fine_tuned_model', {})
+    if resnet_probs:
+        formatted_lines.append("\nMorphological Analysis (ResNet Model):")
+        for condition, prob in sorted(resnet_probs.items(), key=lambda x: float(x[1]), reverse=True):
+            if float(prob) > 0.01:  # Only show results with probability > 1%
+                formatted_lines.append(f"- {condition}: {float(prob)*100:.1f}%")
     
     return ChatResponse(
         message=f"ECG Analysis for {result['patient']['name']}:\n\n" + 
-                "Diagnostic Results:\n" + 
-                f"{formatted_diagnosis}\n\n" + 
-                "Model Analysis Results:\n" + 
-                "\n".join(prob_lines),
+                "\n".join(formatted_lines),
         conversation_id=conversation_id,
         metadata={
             "diagnosis": diagnosis,
@@ -372,12 +400,27 @@ async def handle_view_ecg(db, extracted_info: Dict[str, Any], conversation_id: s
     diagnosis = await get_latest_diagnosis(db, patient_id)
     
     if diagnosis:
-        # Simply show the raw diagnosis
+        # Format diagnostic results display
         info_lines.extend([
             "",
-            "Diagnostic Results:",
-            f"Diagnosis Result: {diagnosis}"
+            "Diagnostic Results:"
         ])
+        
+        # Format DNN model results
+        dnn_probs = diagnosis.get('original_dnn_model', {})
+        if dnn_probs:
+            info_lines.append("\nArrhythmia Analysis (DNN Model):")
+            for condition, prob in sorted(dnn_probs.items(), key=lambda x: float(x[1]), reverse=True):
+                if float(prob) > 0.01:  # Only show results with probability > 1%
+                    info_lines.append(f"- {condition}: {float(prob)*100:.1f}%")
+        
+        # Format ResNet model results
+        resnet_probs = diagnosis.get('resnet_fine_tuned_model', {})
+        if resnet_probs:
+            info_lines.append("\nMorphological Analysis (ResNet Model):")
+            for condition, prob in sorted(resnet_probs.items(), key=lambda x: float(x[1]), reverse=True):
+                if float(prob) > 0.01:  # Only show results with probability > 1%
+                    info_lines.append(f"- {condition}: {float(prob)*100:.1f}%")
         
         # We don't need to add model analysis results anymore since we're showing the raw diagnosis_result
     
@@ -563,41 +606,29 @@ async def handle_export_report(db, extracted_info: Dict[str, Any], conversation_
             conversation_id=conversation_id
         )
     
-    # Try to find the ECG file by instance_id to extract diagnosis results
+    # Get the latest diagnosis directly
     try:
-        # First try to find in the ecg_files collection by instanceIDs field
-        from pymongo import MongoClient
-        mongodb_uri = os.getenv('MONGODB_URI', 'mongodb://localhost:27017')
-        client = MongoClient(mongodb_uri)
-        db_mongo = client.aiclinic
-        
-        # Look for ECG files that contain this instance_id in their instanceIDs array
-        ecg_file = db_mongo.ecg_files.find_one({"dicom_uid": instance_id})
-        
-        # If not found, try looking by dicom_uid
-        if not ecg_file:
-            ecg_file = db_mongo.ecg_files.find_one({"dicom_uid": instance_id})
+        diagnosis = await get_latest_diagnosis(db, patient_id)
         
         diseases = []
         
-        # If we found an ECG file with diagnosis results
-        if ecg_file and "diagnosis_result" in ecg_file:
-            diagnosis_result = ecg_file["diagnosis_result"]
-            logging.info(f"[handle_export_report] Found diagnosis result for instance {instance_id}")
+        # If we found a diagnosis
+        if diagnosis:
+            logging.info(f"[handle_export_report] Found diagnosis for patient {patient_id}")
             
             # Extract diseases with probability > 0.03 from both models
             threshold = 0.03
             
             # Check original_dnn_model
-            if "original_dnn_model" in diagnosis_result:
-                for disease, prob in diagnosis_result["original_dnn_model"].items():
-                    if prob > threshold and disease not in diseases:
+            if "original_dnn_model" in diagnosis:
+                for disease, prob in diagnosis["original_dnn_model"].items():
+                    if float(prob) > threshold and disease not in diseases:
                         diseases.append(disease)
             
             # Check resnet_fine_tuned_model
-            if "resnet_fine_tuned_model" in diagnosis_result:
-                for disease, prob in diagnosis_result["resnet_fine_tuned_model"].items():
-                    if prob > threshold and disease not in diseases:
+            if "resnet_fine_tuned_model" in diagnosis:
+                for disease, prob in diagnosis["resnet_fine_tuned_model"].items():
+                    if float(prob) > threshold and disease not in diseases:
                         diseases.append(disease)
             
           
@@ -770,11 +801,31 @@ async def handle_compare_patients(db, extracted_info: Dict[str, Any], conversati
     for ecg in ecg_records:
         diagnosis = await get_latest_diagnosis(db, patient_id, ecg.get('study_date'))
         if diagnosis:
-            # Just use the raw diagnosis
+            # Format diagnostic results
+            # Find the highest probability results
+            top_findings = []
+            
+            # Check DNN model
+            dnn_probs = diagnosis.get('original_dnn_model', {})
+            if dnn_probs:
+                max_dnn = max(dnn_probs.items(), key=lambda x: float(x[1]), default=(None, 0))
+                if max_dnn[0] and float(max_dnn[1]) > 0.01:
+                    top_findings.append(f"{max_dnn[0]}: {float(max_dnn[1])*100:.1f}%")
+            
+            # Check ResNet model
+            resnet_probs = diagnosis.get('resnet_fine_tuned_model', {})
+            if resnet_probs:
+                max_resnet = max(resnet_probs.items(), key=lambda x: float(x[1]), default=(None, 0))
+                if max_resnet[0] and float(max_resnet[1]) > 0.01:
+                    top_findings.append(f"{max_resnet[0]}: {float(max_resnet[1])*100:.1f}%")
+            
+            # If no significant findings, show as normal
+            summary = ", ".join(top_findings) if top_findings else "Normal"
+            
             comparisons.append({
                 "study_date": ecg.get('study_date', 'Unknown'),
                 "study_time": ecg.get('study_time', 'Unknown'),
-                "diagnosis": diagnosis
+                "diagnosis_summary": summary
             })
     
     if not comparisons:
@@ -787,7 +838,7 @@ async def handle_compare_patients(db, extracted_info: Dict[str, Any], conversati
     table = [
         f"ECG Comparison for Patient: {patient.name}",
         "-" * 70,
-        f"{'Date':10} | {'Time':8} | {'Diagnosis'}",
+        f"{'Date':10} | {'Time':8} | {'Findings'}",
         "-" * 70
     ]
     
@@ -798,7 +849,7 @@ async def handle_compare_patients(db, extracted_info: Dict[str, Any], conversati
         date = c['study_date'][:4] + '-' + c['study_date'][4:6] + '-' + c['study_date'][6:] if len(c['study_date']) == 8 else c['study_date']
         time = c['study_time'][:2] + ':' + c['study_time'][2:4] if len(c['study_time']) >= 4 else c['study_time']
         table.append(
-            f"{date:10} | {time:8} | {c['diagnosis']}"
+            f"{date:10} | {time:8} | {c['diagnosis_summary']}"
         )
     
     return ChatResponse(
