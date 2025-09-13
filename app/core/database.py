@@ -125,25 +125,22 @@ class Database:
             logging.error(f"Error saving ECG data: {e}")
             return False
     
-    async def get_patient_diagnoses(self, patient_id: str) -> List[Dict]:
-        """Get all diagnoses for a patient from ECG files"""
+    async def get_patient_diagnoses(self, patient_id: str) -> Optional[Dict]:
+        """Get the latest diagnosis for a patient from ECG files"""
         try:
             # First get patient record to confirm existence
             doc = await self.db.patients.find_one({"patient_id": patient_id})
             if not doc:
                 logging.warning(f"[get_patient_diagnoses] Patient not found: {patient_id}")
-                return []
+                return None
             
             patient_object_id = doc["_id"]
             logging.info(f"[get_patient_diagnoses] Found patient with _id: {patient_object_id}")
             
-            # Query ECG files using patient's _id, sort by created_at in descending order to get the newest first
-            cursor = self.db.ecg_files.find({"patient_id": patient_object_id}).sort("created_at", -1)
-            diagnoses = []
-            async for doc in cursor:
-                if not doc.get("diagnosis_result"):
-                    continue
-                    
+            # Query ECG files using patient's _id, sort by created_at in descending order to get only the newest
+            doc = await self.db.ecg_files.find_one({"patient_id": patient_object_id}, sort=[("created_at", -1)])
+            
+            if doc and doc.get("diagnosis_result"):
                 diagnosis = doc["diagnosis_result"]
                 # Ensure diagnosis result includes timestamp
                 if "diagnosis_time" not in diagnosis:
@@ -154,15 +151,16 @@ class Database:
                 # Add some metadata
                 diagnosis["ecg_id"] = str(doc["_id"])
                 diagnosis["patient_id"] = patient_id  # Save original patient_id for reference
-                    
-                diagnoses.append(diagnosis)
                 
-            logging.info(f"[get_patient_diagnoses] Found {len(diagnoses)} diagnoses for patient {patient_id}")
-            return diagnoses
+                logging.info(f"[get_patient_diagnoses] Found diagnosis for patient {patient_id}")
+                return diagnosis
+            
+            logging.info(f"[get_patient_diagnoses] No diagnosis found for patient {patient_id}")
+            return None
             
         except Exception as e:
             logging.error(f"[get_patient_diagnoses] Error getting patient diagnoses: {e}", exc_info=True)
-            return []
+            return None
 
     async def get_latest_ecg(self, patient_id: str) -> Optional[EcgFile]:
         """Get the most recent ECG data for a patient"""

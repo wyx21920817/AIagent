@@ -44,40 +44,30 @@ class IntentResult:
 async def get_latest_diagnosis(db: Database, patient_id: str, study_date: Optional[str] = None) -> Optional[Dict]:
     """Get the latest diagnosis for a patient, optionally filtered by study date"""
     try:
-        diagnoses = await db.get_patient_diagnoses(patient_id)
-        if not diagnoses:
-            logging.info(f"[get_latest_diagnosis] No diagnoses found for patient {patient_id}")
+        # Get the latest diagnosis directly
+        diagnosis = await db.get_patient_diagnoses(patient_id)
+        if not diagnosis:
+            logging.info(f"[get_latest_diagnosis] No diagnosis found for patient {patient_id}")
             return None
-            
-        # Filter out diagnoses without timestamps
-        valid_diagnoses = []
-        for diag in diagnoses:
-            if not isinstance(diag, dict):
-                logging.warning(f"[get_latest_diagnosis] Invalid diagnosis format for patient {patient_id}: {diag}")
-                continue
-                
-            # If no diagnosis time, use record creation time
-            if "diagnosis_time" not in diag and "created_at" in diag:
-                diag["diagnosis_time"] = diag["created_at"]
-                
-            if "diagnosis_time" in diag:
-                # If date specified, only keep diagnoses from that date
-                if study_date:
-                    diag_date = diag["diagnosis_time"][:8]  # Take first 8 characters as date
-                    if diag_date == study_date:
-                        valid_diagnoses.append(diag)
-                else:
-                    valid_diagnoses.append(diag)
-            else:
-                logging.warning(f"[get_latest_diagnosis] Diagnosis missing timestamp for patient {patient_id}: {diag}")
         
-        if not valid_diagnoses:
-            logging.warning(f"[get_latest_diagnosis] No valid diagnoses found for patient {patient_id}")
+        # Check if it's a valid dictionary
+        if not isinstance(diagnosis, dict):
+            logging.warning(f"[get_latest_diagnosis] Invalid diagnosis format for patient {patient_id}: {diagnosis}")
             return None
-            
-        # Sort by diagnosis time to get the latest
-        logging.info(f"[get_latest_diagnosis] Found {len(valid_diagnoses)} valid diagnoses for patient {patient_id}")
-        return sorted(valid_diagnoses, key=lambda x: x["diagnosis_time"])[-1]
+        
+        # If no diagnosis time, use record creation time
+        if "diagnosis_time" not in diagnosis and "created_at" in diagnosis:
+            diagnosis["diagnosis_time"] = diagnosis["created_at"]
+        
+        # If date specified, check if diagnosis is from that date
+        if study_date and "diagnosis_time" in diagnosis:
+            diag_date = diagnosis["diagnosis_time"][:8]  # Take first 8 characters as date
+            if diag_date != study_date:
+                logging.info(f"[get_latest_diagnosis] Diagnosis not from specified date {study_date} for patient {patient_id}")
+                return None
+        
+        logging.info(f"[get_latest_diagnosis] Found diagnosis for patient {patient_id}")
+        return diagnosis
         
     except Exception as e:
         logging.error(f"[get_latest_diagnosis] Failed to get diagnosis for patient {patient_id}: {str(e)}", exc_info=True)
@@ -280,7 +270,7 @@ async def handle_analyze_ecg(db, extracted_info: Dict[str, Any], conversation_id
     return ChatResponse(
         message=f"ECG Analysis for {result['patient']['name']}:\n\n" + 
                 "Diagnostic Results:\n" + 
-                f"Interpretation:\n{formatted_interpretation}\n\n" + 
+                f"{formatted_diagnosis}\n\n" + 
                 "Model Analysis Results:\n" + 
                 "\n".join(prob_lines),
         conversation_id=conversation_id,
@@ -388,83 +378,14 @@ async def handle_view_ecg(db, extracted_info: Dict[str, Any], conversation_id: s
     diagnosis_result = diagnosis_info.get('raw_results', {})
     
     if diagnosis_result:
-        # Generate interpretation based on diagnosis_result
-        formatted_interpretation = "- No significant abnormalities detected"
-        
-        # Check if we have significant findings in DNN model
-        dnn_probs = diagnosis_result.get('original_dnn_model', {})
-        if dnn_probs:
-            max_dnn_key = max(dnn_probs.items(), key=lambda x: float(x[1]))[0]
-            max_dnn_prob = float(dnn_probs[max_dnn_key])
-            if max_dnn_prob > 0.01:
-                formatted_interpretation = f"- Rhythm Analysis: {max_dnn_key} (Confidence: {max_dnn_prob*100:.1f}%)"
-        
-        # Check if we have significant findings in ResNet model
-        resnet_probs = diagnosis_result.get('resnet_fine_tuned_model', {})
-        if resnet_probs:
-            max_resnet_key = max(resnet_probs.items(), key=lambda x: float(x[1]))[0]
-            max_resnet_prob = float(resnet_probs[max_resnet_key])
-            if max_resnet_prob > 0.01:
-                if formatted_interpretation == "- No significant abnormalities detected":
-                    formatted_interpretation = f"- Morphology Analysis: {max_resnet_key} (Confidence: {max_resnet_prob*100:.1f}%)"
-                else:
-                    formatted_interpretation += f"\n- Morphology Analysis: {max_resnet_key} (Confidence: {max_resnet_prob*100:.1f}%)"
-        
-        # Add diagnostic results header
+        # Simply show the raw diagnosis_result
         info_lines.extend([
             "",
             "Diagnostic Results:",
-            "Interpretation:",
-            formatted_interpretation
+            f"Diagnosis Result: {diagnosis_result}"
         ])
         
-        # Add model analysis results header
-        info_lines.extend([
-            "",
-            "Model Analysis Results:"
-        ])
-        
-        # DNN model (Arrhythmia Analysis)
-        dnn_probs = diagnosis_result.get('original_dnn_model', {})
-        if dnn_probs:
-            # Convert all values to float for comparison
-            float_probs = {k: float(v) for k, v in dnn_probs.items()}
-            
-            # Find the maximum probability
-            if float_probs:
-                max_key = max(float_probs, key=float_probs.get)
-                max_prob = float_probs[max_key]
-                
-                # Only add arrhythmia analysis if there's a significant probability
-                if max_prob > 0.01:
-                    info_lines.append("Arrhythmia Analysis:")
-                    info_lines.append(f"- {max_key}: {max_prob*100:.1f}%")
-                else:
-                    # If all probabilities are very low, indicate normal rhythm
-                    info_lines.append("Arrhythmia Analysis:")
-                    info_lines.append("- Normal Sinus Rhythm (inferred from low arrhythmia probabilities)")
-            else:
-                info_lines.append("Arrhythmia Analysis: No data available")
-        
-        # ResNet model (Morphological Analysis)
-        resnet_probs = diagnosis_result.get('resnet_fine_tuned_model', diagnosis_result.get('resnet fine tuned model', {}))
-        if resnet_probs:
-            # Convert all values to float for comparison
-            float_probs = {k: float(v) for k, v in resnet_probs.items()}
-            
-            # Find the maximum probability
-            if float_probs:
-                max_key = max(float_probs, key=float_probs.get)
-                max_prob = float_probs[max_key]
-                
-                # Format probability based on its range
-                if max_prob > 0.01:  # Only show if probability > 1%
-                    info_lines.append("Morphological Analysis:")
-                    # Format the probability display
-                    prob_display = f"{max_prob*100:.1f}%"
-                    info_lines.append(f"- {max_key}: {prob_display}")
-            else:
-                info_lines.append("Morphological Analysis: No data available")
+        # We don't need to add model analysis results anymore since we're showing the raw diagnosis_result
     
     return ChatResponse(
         message="\n".join(info_lines),
@@ -855,45 +776,18 @@ async def handle_compare_patients(db, extracted_info: Dict[str, Any], conversati
     for ecg in ecg_records:
         diagnosis = await get_latest_diagnosis(db, patient_id, ecg.get('study_date'))
         if diagnosis:
-            # Generate interpretation based on diagnosis_result
-            interpretation = "No significant abnormalities detected"
-            diagnosis_result = diagnosis.get('raw_results', {})
+            # Add diagnostic results header
+            info_lines = [
+                "",
+                "Diagnostic Results:",
+                f"Diagnosis Result: {diagnosis.get('raw_results', {})}"
+            ]
             
-            # Check if we have significant findings in DNN model
-            dnn_probs = diagnosis_result.get('original_dnn_model', {})
-            if dnn_probs:
-                try:
-                    # Convert all values to float for comparison
-                    float_probs = {k: float(v) for k, v in dnn_probs.items()}
-                    if float_probs:
-                        max_dnn_key = max(float_probs.items(), key=lambda x: x[1])[0]
-                        max_dnn_prob = float_probs[max_dnn_key]
-                        if max_dnn_prob > 0.01:
-                            interpretation = f"Rhythm: {max_dnn_key} ({max_dnn_prob*100:.1f}%)"
-                except (ValueError, TypeError) as e:
-                    logging.warning(f"Error processing DNN probabilities: {e}")
-            
-            # Check if we have significant findings in ResNet model
-            resnet_probs = diagnosis_result.get('resnet_fine_tuned_model', {})
-            if resnet_probs:
-                try:
-                    # Convert all values to float for comparison
-                    float_probs = {k: float(v) for k, v in resnet_probs.items()}
-                    if float_probs:
-                        max_resnet_key = max(float_probs.items(), key=lambda x: x[1])[0]
-                        max_resnet_prob = float_probs[max_resnet_key]
-                        if max_resnet_prob > 0.01:
-                            if interpretation == "No significant abnormalities detected":
-                                interpretation = f"Morphology: {max_resnet_key} ({max_resnet_prob*100:.1f}%)"
-                            else:
-                                interpretation += f", Morphology: {max_resnet_key} ({max_resnet_prob*100:.1f}%)"
-                except (ValueError, TypeError) as e:
-                    logging.warning(f"Error processing ResNet probabilities: {e}")
-            
+            # Just use the raw diagnosis_result
             comparisons.append({
                 "study_date": ecg.get('study_date', 'Unknown'),
                 "study_time": ecg.get('study_time', 'Unknown'),
-                "interpretation": interpretation
+                "diagnosis_result": diagnosis.get('diagnosis_result', {})
             })
     
     if not comparisons:
@@ -906,7 +800,7 @@ async def handle_compare_patients(db, extracted_info: Dict[str, Any], conversati
     table = [
         f"ECG Comparison for Patient: {patient.name}",
         "-" * 70,
-        f"{'Date':10} | {'Time':8} | {'Interpretation':50}",
+        f"{'Date':10} | {'Time':8} | {'Diagnosis Result'}",
         "-" * 70
     ]
     
@@ -917,7 +811,7 @@ async def handle_compare_patients(db, extracted_info: Dict[str, Any], conversati
         date = c['study_date'][:4] + '-' + c['study_date'][4:6] + '-' + c['study_date'][6:] if len(c['study_date']) == 8 else c['study_date']
         time = c['study_time'][:2] + ':' + c['study_time'][2:4] if len(c['study_time']) >= 4 else c['study_time']
         table.append(
-            f"{date:10} | {time:8} | {c['interpretation'][:50]:50}"
+            f"{date:10} | {time:8} | {c['diagnosis_result']}"
         )
     
     return ChatResponse(
