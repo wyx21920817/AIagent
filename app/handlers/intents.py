@@ -444,7 +444,7 @@ async def handle_view_ecg(db, extracted_info: Dict[str, Any], conversation_id: s
         ])
         
         # DNN model (Arrhythmia Analysis)
-        dnn_probs = diagnosis.get('original_dnn_model', diagnosis.get('original dnn model', {}))
+        dnn_probs = diagnosis_result.get('original_dnn_model', {})
         if dnn_probs:
             # Convert all values to float for comparison
             float_probs = {k: float(v) for k, v in dnn_probs.items()}
