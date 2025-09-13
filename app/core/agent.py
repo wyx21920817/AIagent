@@ -27,7 +27,7 @@ from app.utils.tools import (
     get_patient_data, get_ecg_plot,
     analyze_ecg, search_medical_knowledge, recommend_treatment
 )
-from app.core.intent_classifier_api import ApiIntentClassifier
+from app.core.intent_classifier import ApiIntentClassifier
 
 class DoctorAgent:
     def __init__(self):
