@@ -154,14 +154,8 @@ def generate_ecg_report_pdf(interpretation_data, output_path, instance_id=None):
     elements.append(Paragraph(f"Report Date: {current_date}", normal_style))
     elements.append(Spacer(1, 0.25*inch))
     
-    # Add heart rate and rhythm information
-    heart_rate = interpretation_data.get("heart_rate", "Not Available")
-    rhythm = interpretation_data.get("rhythm", "Not Available")
-    
-    elements.append(Paragraph("Vital Signs:", heading_style))
-    elements.append(Paragraph(f"Heart Rate: {heart_rate} BPM" if heart_rate != "Not Available" else "Heart Rate: Not Available BPM", normal_style))
-    elements.append(Paragraph(f"Rhythm: {rhythm}", normal_style))
-    elements.append(Spacer(1, 0.25*inch))
+    # Skip heart rate and rhythm information as they are not reliable
+    elements.append(Spacer(1, 0.1*inch))
     
     # Add the abnormalities section
     abnormalities = interpretation_data.get("abnormalities", [])
