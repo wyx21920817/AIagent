@@ -137,8 +137,8 @@ class Database:
             patient_object_id = doc["_id"]
             logging.info(f"[get_patient_diagnoses] Found patient with _id: {patient_object_id}")
             
-            # Query ECG files using patient's _id
-            cursor = self.db.ecg_files.find({"patient_id": patient_object_id})
+            # Query ECG files using patient's _id, sort by created_at in descending order to get the newest first
+            cursor = self.db.ecg_files.find({"patient_id": patient_object_id}).sort("created_at", -1)
             diagnoses = []
             async for doc in cursor:
                 if not doc.get("diagnosis_result"):

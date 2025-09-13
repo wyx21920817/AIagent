@@ -147,46 +147,14 @@ async def handle_patient_query(extracted_info: Dict[str, Any], conversation_id: 
     try:
         diagnosis = await get_latest_diagnosis(db, patient.patient_id)
         if diagnosis:
-            # Generate interpretation based on diagnosis_result
-            interpretation = "No significant abnormalities detected"
+            # Simply get the diagnosis_result
             diagnosis_result = diagnosis.get('diagnosis_result', {})
-            
-            # Check if we have significant findings in DNN model
-            dnn_probs = diagnosis_result.get('original_dnn_model', {})
-            if dnn_probs:
-                try:
-                    # Convert all values to float for comparison
-                    float_probs = {k: float(v) for k, v in dnn_probs.items()}
-                    if float_probs:
-                        max_dnn_key = max(float_probs.items(), key=lambda x: x[1])[0]
-                        max_dnn_prob = float_probs[max_dnn_key]
-                        if max_dnn_prob > 0.01:
-                            interpretation = f"Rhythm Analysis: {max_dnn_key} (Confidence: {max_dnn_prob*100:.1f}%)"
-                except (ValueError, TypeError) as e:
-                    logging.warning(f"Error processing DNN probabilities: {e}")
-            
-            # Check if we have significant findings in ResNet model
-            resnet_probs = diagnosis_result.get('resnet_fine_tuned_model', {})
-            if resnet_probs:
-                try:
-                    # Convert all values to float for comparison
-                    float_probs = {k: float(v) for k, v in resnet_probs.items()}
-                    if float_probs:
-                        max_resnet_key = max(float_probs.items(), key=lambda x: x[1])[0]
-                        max_resnet_prob = float_probs[max_resnet_key]
-                        if max_resnet_prob > 0.01:
-                            if interpretation == "No significant abnormalities detected":
-                                interpretation = f"Morphology Analysis: {max_resnet_key} (Confidence: {max_resnet_prob*100:.1f}%)"
-                            else:
-                                interpretation += f", Morphology Analysis: {max_resnet_key} (Confidence: {max_resnet_prob*100:.1f}%)"
-                except (ValueError, TypeError) as e:
-                    logging.warning(f"Error processing ResNet probabilities: {e}")
             
             info.extend([
                 "",
                 "Latest Diagnosis:",
                 f"Date: {diagnosis.get('diagnosis_time', 'Unknown')}",
-                f"Interpretation: {interpretation}"
+                f"Diagnosis Result: {diagnosis_result}"
             ])
     except Exception as e:
         logging.error(f"[handle_patient_query] Error getting diagnosis: {str(e)}")
@@ -306,27 +274,8 @@ async def handle_analyze_ecg(db, extracted_info: Dict[str, Any], conversation_id
     
     logging.info(f"[handle_analyze_ecg] Analyzed ECG for patient {patient_id} with diagnosis probabilities")
     
-    # Generate a simple interpretation based on the diagnosis_result
-    formatted_interpretation = "- No significant abnormalities detected"
-    
-    # Check if we have significant findings in DNN model
-    dnn_probs = diagnosis_result.get('original_dnn_model', {})
-    if dnn_probs:
-        max_dnn_key = max(dnn_probs.items(), key=lambda x: float(x[1]))[0]
-        max_dnn_prob = float(dnn_probs[max_dnn_key])
-        if max_dnn_prob > 0.01:
-            formatted_interpretation = f"- Rhythm Analysis: {max_dnn_key} (Confidence: {max_dnn_prob*100:.1f}%)"
-    
-    # Check if we have significant findings in ResNet model
-    resnet_probs = diagnosis_result.get('resnet_fine_tuned_model', {})
-    if resnet_probs:
-        max_resnet_key = max(resnet_probs.items(), key=lambda x: float(x[1]))[0]
-        max_resnet_prob = float(resnet_probs[max_resnet_key])
-        if max_resnet_prob > 0.01:
-            if formatted_interpretation == "- No significant abnormalities detected":
-                formatted_interpretation = f"- Morphology Analysis: {max_resnet_key} (Confidence: {max_resnet_prob*100:.1f}%)"
-            else:
-                formatted_interpretation += f"\n- Morphology Analysis: {max_resnet_key} (Confidence: {max_resnet_prob*100:.1f}%)"
+    # Just use the raw diagnosis_result
+    formatted_diagnosis = f"Diagnosis Result: {diagnosis_result}"
     
     return ChatResponse(
         message=f"ECG Analysis for {result['patient']['name']}:\n\n" + 
@@ -595,45 +544,12 @@ async def handle_generate_report(db, extracted_info: Dict[str, Any], conversatio
     # Add diagnosis if available
     diagnosis = ecg_data.get("diagnosis", {})
     if diagnosis:
-        # Generate interpretation based on diagnosis_result
-        interpretation = "No significant abnormalities detected"
-        diagnosis_result = diagnosis.get('raw_results', {})
-        
-        # Check if we have significant findings in DNN model
-        dnn_probs = diagnosis_result.get('original_dnn_model', {})
-        if dnn_probs:
-            try:
-                # Convert all values to float for comparison
-                float_probs = {k: float(v) for k, v in dnn_probs.items()}
-                if float_probs:
-                    max_dnn_key = max(float_probs.items(), key=lambda x: x[1])[0]
-                    max_dnn_prob = float_probs[max_dnn_key]
-                    if max_dnn_prob > 0.01:
-                        interpretation = f"Rhythm Analysis: {max_dnn_key} (Confidence: {max_dnn_prob*100:.1f}%)"
-            except (ValueError, TypeError) as e:
-                logging.warning(f"Error processing DNN probabilities: {e}")
-        
-        # Check if we have significant findings in ResNet model
-        resnet_probs = diagnosis_result.get('resnet_fine_tuned_model', {})
-        if resnet_probs:
-            try:
-                # Convert all values to float for comparison
-                float_probs = {k: float(v) for k, v in resnet_probs.items()}
-                if float_probs:
-                    max_resnet_key = max(float_probs.items(), key=lambda x: x[1])[0]
-                    max_resnet_prob = float_probs[max_resnet_key]
-                    if max_resnet_prob > 0.01:
-                        if interpretation == "No significant abnormalities detected":
-                            interpretation = f"Morphology Analysis: {max_resnet_key} (Confidence: {max_resnet_prob*100:.1f}%)"
-                        else:
-                            interpretation += f"\n- Morphology Analysis: {max_resnet_key} (Confidence: {max_resnet_prob*100:.1f}%)"
-            except (ValueError, TypeError) as e:
-                logging.warning(f"Error processing ResNet probabilities: {e}")
-        
         report_lines.extend([
             "",
             "Diagnostic Results:",
-            f"- Interpretation: {interpretation}"
+            f"- Heart Rate: {diagnosis.get('heart_rate', 'Not Available')} BPM",
+            f"- Rhythm: {diagnosis.get('rhythm', 'Not Available')}",
+            f"- Interpretation: {diagnosis.get('interpretation', 'Not Available')}"
         ])
         
         # Add probabilities if available
