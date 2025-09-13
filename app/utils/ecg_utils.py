@@ -23,60 +23,116 @@ def interpret_diagnosis(diagnosis_result: Dict) -> Dict:
                 'heart_rate': 'Not Available',
                 'rhythm': 'Not Available',
                 'probabilities': {
-                    'original dnn model': {},
-                    'resnet fine tuned model': {}
+                    'original_dnn_model': {},
+                    'resnet_fine_tuned_model': {}
                 }
             }
             
-        # Get model results
-        dnn_results = diagnosis_result.get('original dnn model', {})
-        resnet_results = diagnosis_result.get('resnet fine tuned model', {})
+        # Get model results - handle both naming conventions
+        dnn_results = diagnosis_result.get('original_dnn_model', diagnosis_result.get('original dnn model', {}))
+        resnet_results = diagnosis_result.get('resnet_fine_tuned_model', diagnosis_result.get('resnet fine tuned model', {}))
+        
+        # Extract heart rate if directly available (unlikely in current format)
+        heart_rate = diagnosis_result.get('heart_rate', 'Not Available')
+        
+        # Initialize rhythm as Not Available, we'll try to infer it from model results
+        rhythm = 'Not Available'
         
         # Generate interpretation
         conditions = []
         
-        # DNN model interpretation (Arrhythmia Classification)
+        # Determine rhythm from DNN model (Arrhythmia Classification)
         if dnn_results:
-            dnn_max = max(dnn_results.items(), key=lambda x: float(x[1]))
-            prob = float(dnn_max[1])
-            if prob > 0.5:  # Only include if probability > 50%
-                arrhythmia_types = {
-                    '1dAVb': 'First-degree Atrioventricular Block',
-                    'RBBB': 'Right Bundle Branch Block',
-                    'LBBB': 'Left Bundle Branch Block',
-                    'SB': 'Sinus Bradycardia',
-                    'AF': 'Atrial Fibrillation',
-                    'ST': 'Sinus Tachycardia'
-                }
-                condition = arrhythmia_types.get(dnn_max[0], dnn_max[0])
-                conditions.append(f"Rhythm Analysis: {condition} (Confidence: {prob:.1%})")
+            # Define arrhythmia types and their full names
+            arrhythmia_types = {
+                '1dAVB': 'First-degree Atrioventricular Block',
+                'RBBB': 'Right Bundle Branch Block',
+                'LBBB': 'Left Bundle Branch Block',
+                'SBRAD': 'Sinus Bradycardia',
+                'AFIB': 'Atrial Fibrillation',
+                'STACH': 'Sinus Tachycardia'
+            }
+            
+            # Find the condition with highest probability
+            try:
+                # Convert all values to float for comparison
+                float_results = {k: float(v) for k, v in dnn_results.items()}
+                dnn_max = max(float_results.items(), key=lambda x: x[1])
+                prob = dnn_max[1]
+                
+                # If highest probability is very low, likely normal rhythm
+                if prob < 0.01:
+                    rhythm = "Normal Sinus Rhythm"
+                    conditions.append(f"Rhythm Analysis: Normal Sinus Rhythm (inferred from low arrhythmia probabilities)")
+                else:
+                    # Use the highest probability arrhythmia
+                    condition_key = dnn_max[0]
+                    condition = arrhythmia_types.get(condition_key, condition_key)
+                    rhythm = condition
+                    conditions.append(f"Rhythm Analysis: {condition} (Confidence: {prob:.1%})")
+            except (ValueError, TypeError) as e:
+                logging.warning(f"Could not determine rhythm from DNN results: {dnn_results}, error: {str(e)}")
+                rhythm = "Normal Sinus Rhythm (default)"
         
         # ResNet model interpretation (Morphology Classification)
+        morphology_condition = None
         if resnet_results:
-            resnet_max = max(resnet_results.items(), key=lambda x: float(x[1]))
-            prob = float(resnet_max[1]) / 100.0  # ResNet probabilities are 0-100
-            if prob > 0.5:  # Only include if probability > 50%
+            try:
+                # Convert all values to float for comparison
+                float_results = {k: float(v) for k, v in resnet_results.items()}
+                resnet_max = max(float_results.items(), key=lambda x: x[1])
+                prob = resnet_max[1]  # ResNet probabilities might be 0-1 or 0-100
+                
+                # Define morphology types
                 morphology_types = {
                     'NORM': 'Normal',
                     'STTC': 'ST-T Changes',
                     'MI': 'Myocardial Infarction',
                     'HYP': 'Left Ventricular Hypertrophy',
-                    'CD': 'Cardiac Disease'
+                    'CD': 'Cardiac Disease',
+                    'RBBB': 'Right Bundle Branch Block',
+                    '1dAVB': 'First-degree AV Block',
+                    '2dAVB': 'Second-degree AV Block',
+                    '3dAVB': 'Third-degree AV Block'
                 }
-                condition = morphology_types.get(resnet_max[0], resnet_max[0])
-                conditions.append(f"Morphology Analysis: {condition} (Confidence: {prob:.1%})")
-            
+                
+                # Get the condition name
+                condition_key = resnet_max[0]
+                condition = morphology_types.get(condition_key, condition_key)
+                morphology_condition = condition
+                
+                # Format the probability based on its range
+                if prob > 1:  # If it's in 0-100 range
+                    prob_display = f"{prob:.1f}%"
+                else:  # If it's in 0-1 range
+                    prob_display = f"{prob:.1%}"
+                
+                conditions.append(f"Morphology Analysis: {condition} (Confidence: {prob_display})")
+                
+                # If it's NORM with high probability and rhythm is still not available
+                if condition_key == 'NORM' and prob > 0.4 and rhythm == 'Not Available':
+                    rhythm = "Normal Sinus Rhythm"
+                
+            except (ValueError, TypeError) as e:
+                logging.warning(f"Could not determine morphology from ResNet results: {resnet_results}, error: {str(e)}")
+        
         # Generate final interpretation
         if not conditions:
             interpretation = "No significant abnormalities detected"
         else:
             interpretation = ", ".join(conditions)
         
+        # If we have a normal morphology but no specific rhythm, use a generic normal description
+        if morphology_condition == "Normal" and rhythm == "Not Available":
+            rhythm = "Normal Sinus Rhythm"
+        
         return {
             'interpretation': interpretation,
+            'heart_rate': heart_rate,
+            'rhythm': rhythm,
             'probabilities': {
-                'original dnn model': dnn_results,
-                'resnet fine tuned model': resnet_results
+                'original_dnn_model': dnn_results,
+                'resnet_fine_tuned_model': resnet_results
             }
         }
         
@@ -84,6 +140,8 @@ def interpret_diagnosis(diagnosis_result: Dict) -> Dict:
         logging.error(f"Error interpreting diagnosis: {str(e)}")
         return {
             'interpretation': f"Diagnosis interpretation failed: {str(e)}",
+            'heart_rate': 'Not Available',
+            'rhythm': 'Not Available',
             'probabilities': {}
         }
 

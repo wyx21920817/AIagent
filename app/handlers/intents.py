@@ -266,10 +266,18 @@ async def handle_analyze_ecg(db, extracted_info: Dict[str, Any], conversation_id
     
     logging.info(f"[handle_analyze_ecg] Analyzed ECG for patient {patient_id} with diagnosis probabilities")
     
-    # Return analysis results
+    # Return analysis results with heart rate and rhythm information
+    heart_rate = diagnosis.get('heart_rate', 'Not Available')
+    rhythm = diagnosis.get('rhythm', 'Not Available')
+    
+    # Format heart rate with BPM if available
+    heart_rate_display = f"{heart_rate} BPM" if heart_rate != 'Not Available' else "Not Available BPM"
+    
     return ChatResponse(
         message=f"ECG Analysis for {result['patient']['name']}:\n\n" + 
                 "Diagnostic Results:\n" + 
+                f"- Heart Rate: {heart_rate_display}\n" + 
+                f"- Rhythm: {rhythm}\n" + 
                 f"- Interpretation: {diagnosis.get('interpretation', 'Not Available')}\n\n" + 
                 "Model Analysis Results:\n" + 
                 "\n".join(prob_lines),
@@ -674,6 +682,16 @@ async def handle_export_report(db, extracted_info: Dict[str, Any], conversation_
             # Parse the JSON response
             ai_response = response.json()
             logging.info(f"[handle_export_report] Received interpretation response from AI server for instance {instance_id}")
+            
+            # Extract heart rate and rhythm information from diagnosis results if available
+            if ecg_file and "diagnosis_result" in ecg_file:
+                # Use the interpret_diagnosis function to get heart rate and rhythm
+                from app.utils.ecg_utils import interpret_diagnosis
+                diagnosis_interpretation = interpret_diagnosis(ecg_file["diagnosis_result"])
+                
+                # Add heart rate and rhythm to the AI response
+                ai_response["heart_rate"] = diagnosis_interpretation.get("heart_rate", "Not Available")
+                ai_response["rhythm"] = diagnosis_interpretation.get("rhythm", "Not Available")
             
             # Define reports directory
             ECG_REPORTS_DIR = Path(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "reports", "ecg"))
