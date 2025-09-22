@@ -681,13 +681,13 @@ async def handle_export_report(db, extracted_info: Dict[str, Any], conversation_
             # Check original_dnn_model
             if "original_dnn_model" in diagnosis:
                 for disease, prob in diagnosis["original_dnn_model"].items():
-                    if float(prob) > threshold and disease not in diseases:
+                    if float(prob) > threshold and disease not in diseases and disease is not 'NORM':
                         diseases.append(disease)
             
             # Check resnet_fine_tuned_model
             if "resnet_fine_tuned_model" in diagnosis:
                 for disease, prob in diagnosis["resnet_fine_tuned_model"].items():
-                    if float(prob) > threshold and disease not in diseases:
+                    if float(prob) > threshold and disease not in diseases and disease is not 'NORM':
                         diseases.append(disease)
             
           
