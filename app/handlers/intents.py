@@ -627,33 +627,26 @@ async def handle_export_report(db, extracted_info: Dict[str, Any], conversation_
     import os
     logging.info(f"[handle_export_report] Processing export report request with extracted_info: {extracted_info}")
     
-    # Extract instance ID from the question if available
-    question = extracted_info.get("question", "")
-    instance_id = extracted_info.get("instance_id") or extracted_info.get("ecg_id")
+    # Get instance_id from the session
+    session = await session_manager.get_session(conversation_id)
+    instance_id = None
     
-    # Try to extract instance ID from the question if not found in extracted_info
-    if not instance_id and question:
-        import re
-        # Look for patterns like "ECG instance ID is X" or "instance ID X"
-        id_patterns = [
-            r"ECG instance ID is ([\w\-]+)",
-            r"instance ID is ([\w\-]+)",
-            r"instance ID ([\w\-]+)",
-            r"ECG ID is ([\w\-]+)",
-            r"ECG ID ([\w\-]+)"
-        ]
-        
-        for pattern in id_patterns:
-            match = re.search(pattern, question, re.IGNORECASE)
-            if match:
-                instance_id = match.group(1)
-                logging.info(f"[handle_export_report] Extracted instance_id from question: {instance_id}")
-                break
-    
+    # First check if instance_id is provided in extracted_info
+    if "instance_id" in extracted_info and extracted_info["instance_id"]:
+        instance_id = extracted_info["instance_id"]
+        logging.info(f"[handle_export_report] Using instance_id from extracted_info: {instance_id}")
+    elif "ecg_id" in extracted_info and extracted_info["ecg_id"]:
+        instance_id = extracted_info["ecg_id"]
+        logging.info(f"[handle_export_report] Using ecg_id from extracted_info: {instance_id}")
+    # If not in extracted_info, try to get from session
+    elif session and hasattr(session, 'ecg_instance_id') and session.ecg_instance_id:
+        instance_id = session.ecg_instance_id
+        logging.info(f"[handle_export_report] Using instance_id from session: {instance_id}")
     # If still no instance_id, inform the user
-    if not instance_id:
+    else:
+        logging.warning("[handle_export_report] No instance_id found in extracted_info or session")
         return ChatResponse(
-            message="Please provide an ECG instance ID to generate a report.",
+            message="No ECG instance ID found. Please view an ECG first or provide an ECG instance ID.",
             conversation_id=conversation_id
         )
     
@@ -672,16 +665,17 @@ async def handle_export_report(db, extracted_info: Dict[str, Any], conversation_
                 conversation_id=conversation_id
             )
     
-    # Store the instance_id in the session for future reference
-    try:
-        session = await session_manager.get_session(conversation_id)
-        if session:
-            # Only update if this instance belongs to the current patient
-            session.ecg_instance_id = instance_id
-            await session_manager.save_session(session)
-            logging.info(f"[handle_export_report] Stored instance_id {instance_id} in session for patient {patient_id}")
-    except Exception as e:
-        logging.error(f"[handle_export_report] Error updating session with instance_id: {str(e)}", exc_info=True)
+    # We already have the session and instance_id, no need to store it again if it came from the session
+    # Only update if the instance_id came from extracted_info and not from the session
+    if "instance_id" in extracted_info or "ecg_id" in extracted_info:
+        try:
+            if session:
+                # Only update if this instance belongs to the current patient
+                session.ecg_instance_id = instance_id
+                await session_manager.save_session(session)
+                logging.info(f"[handle_export_report] Updated instance_id {instance_id} in session for patient {patient_id}")
+        except Exception as e:
+            logging.error(f"[handle_export_report] Error updating session with instance_id: {str(e)}", exc_info=True)
     
     # Verify that the patient exists
     try:
