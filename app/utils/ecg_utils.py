@@ -207,9 +207,25 @@ def get_ecg_by_instance_id(instance_id: str) -> Dict[str, Any]:
         
         # Get patient info
         try:
+            # Since patient_id is a ReferenceField to Patient in the EcgFile model,
+            # ecg_file.patient_id should already be a Patient object
+            logging.info(f"[get_ecg_by_instance_id] Patient ID type: {type(ecg_file.patient_id)}")
             
-             
-            patient = Patient.objects(id=ecg_file.patient_id).first()
+            # Just use the patient_id directly as it's already a Patient object
+            patient = ecg_file.patient_id
+            
+            # Verify that we have a valid Patient object
+            if not patient or not isinstance(patient, Patient):
+                logging.warning(f"[get_ecg_by_instance_id] Invalid patient reference: {patient}")
+                # If not a valid Patient object, try to get by ID
+                try:
+                    if hasattr(patient, 'id'):
+                        patient = Patient.objects(id=patient.id).first()
+                    else:
+                        patient = None
+                except Exception as e:
+                    logging.error(f"[get_ecg_by_instance_id] Error getting patient by ID: {str(e)}")
+                    patient = None
                 
             if not patient:
                 return {"error": f"Patient not found for ECG instance: {instance_id}"}
