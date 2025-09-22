@@ -38,6 +38,7 @@ class Tool(BaseModel):
 class SessionData(BaseModel):
     session_id: str
     patient_id: Optional[str] = None
+    ecg_instance_id: Optional[str] = None  # Store the current ECG instance ID
     last_access: datetime = Field(default_factory=datetime.now)
     context: Dict = Field(default_factory=dict)
     
@@ -56,6 +57,7 @@ class SessionData(BaseModel):
         return {
             'session_id': self.session_id,
             'patient_id': self.patient_id,
+            'ecg_instance_id': self.ecg_instance_id,
             'last_access': self.last_access.isoformat(),
             'context': self.context
         }

@@ -245,6 +245,7 @@ def get_patient_ecg_data(patient_id: str, study_date: Optional[str] = None) -> D
         ecg_data = {
             "study_date": study_datetime.strftime("%Y%m%d"),
             "study_time": study_datetime.strftime("%H%M%S"),
+            "dicom_uid": ecg_file.dicom_uid,  # Include dicom_uid as instance ID
             "waveform": waveform_data,
             "diagnosis": {
                 "raw_results": ecg_file.diagnosis_result,

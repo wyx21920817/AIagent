@@ -162,6 +162,23 @@ async def handle_patient_query(extracted_info: Dict[str, Any], conversation_id: 
     except Exception as e:
         logging.error(f"[handle_patient_query] Error getting diagnosis: {str(e)}")
     
+    # Update the session with the new patient ID and clear the ecg_instance_id
+    try:
+        session = await session_manager.get_session(conversation_id)
+        if session:
+            # Check if patient ID has changed
+            if session.patient_id != patient.patient_id:
+                # Clear the ecg_instance_id when switching to a new patient
+                session.ecg_instance_id = None
+                logging.info(f"[handle_patient_query] Cleared ecg_instance_id due to patient change from {session.patient_id} to {patient.patient_id}")
+            
+            # Update the patient ID
+            session.patient_id = patient.patient_id
+            await session_manager.save_session(session)
+            logging.info(f"[handle_patient_query] Updated session with patient_id {patient.patient_id}")
+    except Exception as e:
+        logging.error(f"[handle_patient_query] Error updating session: {str(e)}", exc_info=True)
+    
     response = ChatResponse(
         message="Patient Information:\n" + "\n".join(f"    {line}" for line in info),
         conversation_id=conversation_id,
@@ -220,6 +237,22 @@ async def handle_analyze_ecg(db, extracted_info: Dict[str, Any], conversation_id
             message=result["error"],
             conversation_id=conversation_id
         )
+        
+    # Store the ECG instance ID (dicom_uid) in the session
+    try:
+        # Get the dicom_uid from the result
+        ecg_data = result.get("ecg_data", {})
+        dicom_uid = ecg_data.get("dicom_uid")
+        
+        if dicom_uid:
+            # Update the session with the ECG instance ID
+            session = await session_manager.get_session(conversation_id)
+            if session:
+                session.ecg_instance_id = dicom_uid
+                await session_manager.save_session(session)
+                logging.info(f"[handle_analyze_ecg] Stored ecg_instance_id {dicom_uid} in session for patient {patient_id}")
+    except Exception as e:
+        logging.error(f"[handle_analyze_ecg] Error updating session with ecg_instance_id: {str(e)}", exc_info=True)
     
     # Get ECG data
     ecg_data = result["ecg_data"]
@@ -353,6 +386,21 @@ async def handle_view_ecg(db, extracted_info: Dict[str, Any], conversation_id: s
     ecg_data = result["ecg_data"]
     date_str = f"{ecg_data['study_date'][:4]}-{ecg_data['study_date'][4:6]}-{ecg_data['study_date'][6:]}"
     time_str = f"{ecg_data['study_time'][:2]}:{ecg_data['study_time'][2:4]}"
+    
+    # Store the ECG instance ID (dicom_uid) in the session
+    try:
+        # Get the dicom_uid from the result
+        dicom_uid = ecg_data.get("dicom_uid")
+        
+        if dicom_uid:
+            # Update the session with the ECG instance ID
+            session = await session_manager.get_session(conversation_id)
+            if session:
+                session.ecg_instance_id = dicom_uid
+                await session_manager.save_session(session)
+                logging.info(f"[handle_view_ecg] Stored ecg_instance_id {dicom_uid} in session for patient {patient_id}")
+    except Exception as e:
+        logging.error(f"[handle_view_ecg] Error updating session with ecg_instance_id: {str(e)}", exc_info=True)
     
     # Prepare response message
     info_lines = [
@@ -590,6 +638,17 @@ async def handle_export_report(db, extracted_info: Dict[str, Any], conversation_
                 conversation_id=conversation_id
             )
     
+    # Store the instance_id in the session for future reference
+    try:
+        session = await session_manager.get_session(conversation_id)
+        if session:
+            # Only update if this instance belongs to the current patient
+            session.ecg_instance_id = instance_id
+            await session_manager.save_session(session)
+            logging.info(f"[handle_export_report] Stored instance_id {instance_id} in session for patient {patient_id}")
+    except Exception as e:
+        logging.error(f"[handle_export_report] Error updating session with instance_id: {str(e)}", exc_info=True)
+    
     # Verify that the patient exists
     try:
         patient = await db.get_patient(patient_id)
@@ -685,11 +744,28 @@ async def handle_export_report(db, extracted_info: Dict[str, Any], conversation_
             ai_response = response.json()
             logging.info(f"[handle_export_report] Received interpretation response from AI server for instance {instance_id}")
             
+            # Try to fetch the ECG file data for the given instance ID
+            # First try direct _id match
+            ecg_file = await db.get_ecg_data(instance_id)
+            
+            # If not found, try to find by instanceIDs field
+            if not ecg_file:
+                # Query for ECG files that have this instance_id in their instanceIDs list
+                cursor = db.db.ecg_files.find({"instanceIDs": instance_id})
+                async for doc in cursor:
+                    if doc:
+                        from app.model.ecg_file import EcgFile
+                        ecg_file = EcgFile(**doc)
+                        logging.info(f"[handle_export_report] Found ECG file by instanceIDs: {ecg_file.id}")
+                        break
+            
+            logging.info(f"[handle_export_report] ECG file found: {ecg_file is not None}")
+            
             # Generate interpretation based on diagnosis_result if available
-            if ecg_file and "diagnosis_result" in ecg_file:
+            if ecg_file and hasattr(ecg_file, 'diagnosis_result') and ecg_file.diagnosis_result:
                 # Use the interpret_diagnosis function to get interpretation
                 from app.utils.ecg_utils import interpret_diagnosis
-                diagnosis_interpretation = interpret_diagnosis(ecg_file["diagnosis_result"])
+                diagnosis_interpretation = interpret_diagnosis(ecg_file.diagnosis_result)
                 
                 # Add interpretation to the AI response
                 ai_response["interpretation"] = diagnosis_interpretation.get("interpretation", "No significant abnormalities detected")

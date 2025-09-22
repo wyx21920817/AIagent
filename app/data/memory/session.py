@@ -53,17 +53,29 @@ class SessionManager:
             # Check existing session
             existing_session = self._sessions.get(session.session_id)
             if existing_session and isinstance(existing_session, SessionData):
+                # If patient_id changed, clear the ecg_instance_id
+                if existing_session.patient_id and session.patient_id and existing_session.patient_id != session.patient_id:
+                    session.ecg_instance_id = None
+                    logging.info(f"[SessionManager] Cleared ecg_instance_id due to patient_id change from {existing_session.patient_id} to {session.patient_id}")
+                
                 # If existing session has patient_id and new session doesn't, keep the existing one
                 if existing_session.patient_id and not session.patient_id:
                     session.patient_id = existing_session.patient_id
                     logging.info(f"[SessionManager] Kept existing patient_id: {session.patient_id} for session {session.session_id}")
+                
+                # If existing session has ecg_instance_id and new session doesn't, keep the existing one
+                if existing_session.ecg_instance_id and not session.ecg_instance_id:
+                    # Only keep if patient_id hasn't changed
+                    if existing_session.patient_id == session.patient_id:
+                        session.ecg_instance_id = existing_session.ecg_instance_id
+                        logging.info(f"[SessionManager] Kept existing ecg_instance_id: {session.ecg_instance_id} for session {session.session_id}")
             
             # Update access time
             session.last_access = datetime.now()
             
             # Save session
             self._sessions[session.session_id] = session
-            logging.info(f"[SessionManager] Saved session {session.session_id} with patient_id: {session.patient_id}")
+            logging.info(f"[SessionManager] Saved session {session.session_id} with patient_id: {session.patient_id}, ecg_instance_id: {session.ecg_instance_id}")
         except Exception as e:
             logging.error(f"[SessionManager] Error saving session: {e}")
     
