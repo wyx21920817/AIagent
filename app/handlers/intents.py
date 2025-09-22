@@ -41,36 +41,38 @@ class IntentResult:
         self.confidence = confidence
         self.extracted_info = extracted_info or {}
 
-async def get_latest_diagnosis(db: Database, patient_id: str, study_date: Optional[str] = None) -> Optional[Dict]:
-    """Get the latest diagnosis for a patient, optionally filtered by study date"""
+async def get_latest_diagnosis(db: Database, study_date: Optional[str] = None, instance_id: Optional[str] = None) -> Optional[Dict]:
+    """Get diagnosis by instance_id or study_date"""
     try:
-        # Get the latest diagnosis directly
-        diagnosis = await db.get_patient_diagnoses(patient_id)
-        if not diagnosis:
-            logging.info(f"[get_latest_diagnosis] No diagnosis found for patient {patient_id}")
-            return None
+        # If instance_id is provided, try to get the ECG file directly by dicom_uid
+        if instance_id:
+            from app.model.ecg_file import EcgFile
+            try:
+                ecg_file = EcgFile.objects(dicom_uid=instance_id).first()
+                if ecg_file and hasattr(ecg_file, 'diagnosis_result') and ecg_file.diagnosis_result:
+                    diagnosis = ecg_file.diagnosis_result
+                    # Ensure diagnosis result includes timestamp
+                    if "diagnosis_time" not in diagnosis:
+                        diagnosis["diagnosis_time"] = ecg_file.created_at
+                    if "created_at" not in diagnosis:
+                        diagnosis["created_at"] = ecg_file.created_at
+                        
+                    # Add some metadata
+                    diagnosis["ecg_id"] = str(ecg_file.id)
+                    
+                    logging.info(f"[get_latest_diagnosis] Found diagnosis for instance {instance_id}")
+                    return diagnosis
+                else:
+                    logging.info(f"[get_latest_diagnosis] No diagnosis found for instance {instance_id}")
+            except Exception as e:
+                logging.error(f"[get_latest_diagnosis] Error finding ECG file by dicom_uid: {str(e)}", exc_info=True)
         
-        # Check if it's a valid dictionary
-        if not isinstance(diagnosis, dict):
-            logging.warning(f"[get_latest_diagnosis] Invalid diagnosis format for patient {patient_id}: {diagnosis}")
-            return None
-        
-        # If no diagnosis time, use record creation time
-        if "diagnosis_time" not in diagnosis and "created_at" in diagnosis:
-            diagnosis["diagnosis_time"] = diagnosis["created_at"]
-        
-        # If date specified, check if diagnosis is from that date
-        if study_date and "diagnosis_time" in diagnosis:
-            diag_date = diagnosis["diagnosis_time"][:8]  # Take first 8 characters as date
-            if diag_date != study_date:
-                logging.info(f"[get_latest_diagnosis] Diagnosis not from specified date {study_date} for patient {patient_id}")
-                return None
-        
-        logging.info(f"[get_latest_diagnosis] Found diagnosis for patient {patient_id},{diagnosis}")
-        return diagnosis
+        # If no instance_id or no diagnosis found by instance_id, we can't proceed without patient_id
+        logging.warning(f"[get_latest_diagnosis] Cannot get diagnosis without instance_id")
+        return None
         
     except Exception as e:
-        logging.error(f"[get_latest_diagnosis] Failed to get diagnosis for patient {patient_id}: {str(e)}", exc_info=True)
+        logging.error(f"[get_latest_diagnosis] Failed to get diagnosis: {str(e)}", exc_info=True)
         return None
 
 
@@ -133,34 +135,49 @@ async def handle_patient_query(extracted_info: Dict[str, Any], conversation_id: 
         f"Birth Date: {patient.birth_date.strftime('%Y-%m-%d') if patient.birth_date else 'Not specified'}"
     ]
     
-    # Get latest diagnosis if available
+    # We can't get the latest diagnosis without an instance_id anymore
+    # Try to get the instance_id from the session if available
+    diagnosis = None
     try:
-        diagnosis = await get_latest_diagnosis(db, patient.patient_id)
-        if diagnosis:
-            # Format diagnostic results display
-            info.extend([
-                "",
-                "Latest Diagnosis:",
-                f"Date: {diagnosis.get('diagnosis_time', 'Unknown')}"
-            ])
+        session = await session_manager.get_session(conversation_id)
+        instance_id = None
+        if session and hasattr(session, 'ecg_instance_id') and session.ecg_instance_id:
+            instance_id = session.ecg_instance_id
+            logging.info(f"[handle_patient_query] Found instance_id {instance_id} in session")
             
-            # Format DNN model results
-            dnn_probs = diagnosis.get('original_dnn_model', {})
-            if dnn_probs:
-                info.append("\nArrhythmia Analysis (DNN Model):")
-                for condition, prob in sorted(dnn_probs.items(), key=lambda x: float(x[1]), reverse=True):
-                    if float(prob) > 0.01:  # Only show results with probability > 1%
-                        info.append(f"- {condition}: {float(prob)*100:.1f}%")
-            
-            # Format ResNet model results
-            resnet_probs = diagnosis.get('resnet_fine_tuned_model', {})
-            if resnet_probs:
-                info.append("\nMorphological Analysis (ResNet Model):")
-                for condition, prob in sorted(resnet_probs.items(), key=lambda x: float(x[1]), reverse=True):
-                    if float(prob) > 0.01:  # Only show results with probability > 1%
-                        info.append(f"- {condition}: {float(prob)*100:.1f}%")
+            # Get diagnosis using the instance_id
+            diagnosis = await get_latest_diagnosis(db, instance_id=instance_id)
+            if diagnosis:
+                # Format diagnostic results display
+                info.extend([
+                    "",
+                    "Latest Diagnosis:",
+                    f"Date: {diagnosis.get('diagnosis_time', 'Unknown')}"
+                ])
+            else:
+                logging.info(f"[handle_patient_query] No diagnosis found for instance {instance_id}")
+        else:
+            logging.info(f"[handle_patient_query] No instance_id found in session")
     except Exception as e:
-        logging.error(f"[handle_patient_query] Error getting diagnosis: {str(e)}")
+        logging.error(f"[handle_patient_query] Error getting diagnosis: {str(e)}", exc_info=True)
+            
+    # Format DNN model results if diagnosis exists
+    if diagnosis:
+        # Format DNN model results
+        dnn_probs = diagnosis.get('original_dnn_model', {})
+        if dnn_probs:
+            info.append("\nArrhythmia Analysis (DNN Model):")
+            for condition, prob in sorted(dnn_probs.items(), key=lambda x: float(x[1]), reverse=True):
+                if float(prob) > 0.01:  # Only show results with probability > 1%
+                    info.append(f"- {condition}: {float(prob)*100:.1f}%")
+        
+        # Format ResNet model results
+        resnet_probs = diagnosis.get('resnet_fine_tuned_model', {})
+        if resnet_probs:
+            info.append("\nMorphological Analysis (ResNet Model):")
+            for condition, prob in sorted(resnet_probs.items(), key=lambda x: float(x[1]), reverse=True):
+                if float(prob) > 0.01:  # Only show results with probability > 1%
+                    info.append(f"- {condition}: {float(prob)*100:.1f}%")
     
     # Update the session with the new patient ID and clear the ecg_instance_id
     try:
@@ -257,12 +274,20 @@ async def handle_analyze_ecg(db, extracted_info: Dict[str, Any], conversation_id
     # Get ECG data
     ecg_data = result["ecg_data"]
     
-    # Get the latest diagnosis directly
-    diagnosis = await get_latest_diagnosis(db, patient_id)
-    if not diagnosis:
-        logging.warning(f"[handle_analyze_ecg] No diagnosis found for patient {patient_id}")
+    # Get the diagnosis using the instance_id (dicom_uid)
+    dicom_uid = ecg_data.get("dicom_uid")
+    if not dicom_uid:
+        logging.warning(f"[handle_analyze_ecg] No dicom_uid found in ECG data")
         return ChatResponse(
-            message="No diagnosis found for this patient.",
+            message="No ECG instance ID found for analysis.",
+            conversation_id=conversation_id
+        )
+        
+    diagnosis = await get_latest_diagnosis(db, instance_id=dicom_uid)
+    if not diagnosis:
+        logging.warning(f"[handle_analyze_ecg] No diagnosis found for instance {dicom_uid}")
+        return ChatResponse(
+            message="No diagnosis found for this ECG instance.",
             conversation_id=conversation_id
         )
     
@@ -444,8 +469,17 @@ async def handle_view_ecg(db, extracted_info: Dict[str, Any], conversation_id: s
                 "Error: Could not generate ECG waveform plot."
             ])
     
-    # Get the latest diagnosis directly
-    diagnosis = await get_latest_diagnosis(db, patient_id)
+    # Get the diagnosis using the instance_id (dicom_uid)
+    dicom_uid = ecg_data.get("dicom_uid")
+    diagnosis = None
+    if dicom_uid:
+        diagnosis = await get_latest_diagnosis(db, instance_id=dicom_uid)
+        if diagnosis:
+            logging.info(f"[handle_view_ecg] Found diagnosis for instance {dicom_uid}")
+        else:
+            logging.warning(f"[handle_view_ecg] No diagnosis found for instance {dicom_uid}")
+    else:
+        logging.warning(f"[handle_view_ecg] No dicom_uid found in ECG data")
     
     if diagnosis:
         # Format diagnostic results display
@@ -665,15 +699,15 @@ async def handle_export_report(db, extracted_info: Dict[str, Any], conversation_
             conversation_id=conversation_id
         )
     
-    # Get the latest diagnosis directly
+    # Get the diagnosis for the specific instance_id
     try:
-        diagnosis = await get_latest_diagnosis(db, patient_id)
+        diagnosis = await get_latest_diagnosis(db, instance_id=instance_id)
         
         diseases = []
         
         # If we found a diagnosis
         if diagnosis:
-            logging.info(f"[handle_export_report] Found diagnosis for patient {patient_id}")
+            logging.info(f"[handle_export_report] Found diagnosis for patient {patient_id} and instance {instance_id}")
             
             # Extract diseases with probability > 0.03 from both models
             threshold = 0.03
@@ -747,21 +781,11 @@ async def handle_export_report(db, extracted_info: Dict[str, Any], conversation_
             # Try to fetch the ECG file data for the given instance ID
             from app.model.ecg_file import EcgFile
             
-            # First try to find by dicom_uid (which should be the same as instance_id)
-            ecg_file = None
-            try:
-                ecg_file = EcgFile.objects(dicom_uid=instance_id).first()
-                if ecg_file:
-                    logging.info(f"[handle_export_report] Found ECG file by dicom_uid: {ecg_file.id}")
-            except Exception as e:
-                logging.error(f"[handle_export_report] Error finding ECG file by dicom_uid: {str(e)}", exc_info=True)
-            
-            
-            # Generate interpretation based on diagnosis_result if available
-            if ecg_file and hasattr(ecg_file, 'diagnosis_result') and ecg_file.diagnosis_result:
+            # Use the diagnosis result we already have from get_latest_diagnosis
+            if diagnosis and "interpretation" not in ai_response:
                 # Use the interpret_diagnosis function to get interpretation
                 from app.utils.ecg_utils import interpret_diagnosis
-                diagnosis_interpretation = interpret_diagnosis(ecg_file.diagnosis_result)
+                diagnosis_interpretation = interpret_diagnosis(diagnosis)
                 
                 # Add interpretation to the AI response
                 ai_response["interpretation"] = diagnosis_interpretation.get("interpretation", "No significant abnormalities detected")
@@ -871,7 +895,12 @@ async def handle_compare_patients(db, extracted_info: Dict[str, Any], conversati
     # Get diagnoses for each ECG
     comparisons = []
     for ecg in ecg_records:
-        diagnosis = await get_latest_diagnosis(db, patient_id, ecg.get('study_date'))
+        # Try to get diagnosis by instance_id if available, otherwise we can't get it without patient_id
+        instance_id = ecg.get('dicom_uid')
+        if instance_id:
+            diagnosis = await get_latest_diagnosis(db, instance_id=instance_id)
+        else:
+            diagnosis = None
         if diagnosis:
             # Format diagnostic results
             # Find the highest probability results
