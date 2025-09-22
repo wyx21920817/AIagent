@@ -207,7 +207,10 @@ def get_ecg_by_instance_id(instance_id: str) -> Dict[str, Any]:
         
         # Get patient info
         try:
+            
+             
             patient = Patient.objects(id=ecg_file.patient_id).first()
+                
             if not patient:
                 return {"error": f"Patient not found for ECG instance: {instance_id}"}
             logging.info(f"[get_ecg_by_instance_id] Found patient: {patient.id} ({patient.name})")
