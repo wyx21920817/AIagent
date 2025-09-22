@@ -241,8 +241,8 @@ async def handle_analyze_ecg(db, extracted_info: Dict[str, Any], conversation_id
         
     logging.info(f"[handle_analyze_ecg] Analyzing ECG for patient: {patient_id}")
     
-    # Get study date if specified
-    study_date = extracted_info.get("study_date")
+    # Study date is no longer in the prompt
+    study_date = None
     
     # Get ECG data using the utility function
     from app.utils.ecg_utils import get_patient_ecg_data
@@ -376,6 +376,19 @@ async def handle_view_ecg(db, extracted_info: Dict[str, Any], conversation_id: s
     session = await session_manager.get_session(conversation_id)
     patient_id = None
     
+    # Check if instance_id/ecg_id is specified in the request
+    instance_id = extracted_info.get("instance_id") or extracted_info.get("ecg_id") or extracted_info.get("report_id")
+    if instance_id:
+        logging.info(f"[handle_view_ecg] Instance ID specified in request: {instance_id}")
+        # Update the session with the requested instance_id immediately
+        try:
+            if session:
+                session.ecg_instance_id = instance_id
+                await session_manager.save_session(session)
+                logging.info(f"[handle_view_ecg] Updated session with requested instance_id: {instance_id}")
+        except Exception as e:
+            logging.error(f"[handle_view_ecg] Error updating session with requested instance_id: {str(e)}", exc_info=True)
+    
     # 1. First check if patient_id exists in extracted_info
     if "patient_id" in extracted_info and extracted_info["patient_id"]:
         patient_id = extracted_info["patient_id"]
@@ -394,8 +407,8 @@ async def handle_view_ecg(db, extracted_info: Dict[str, Any], conversation_id: s
             conversation_id=conversation_id
         )
     
-    # Get study date if specified
-    study_date = extracted_info.get("study_date")
+    # Study date is no longer in the prompt
+    study_date = None
     
     # Get ECG data using the utility function
     from app.utils.ecg_utils import get_patient_ecg_data
@@ -530,8 +543,8 @@ async def handle_generate_report(db, extracted_info: Dict[str, Any], conversatio
             conversation_id=conversation_id
         )
     
-    # Get study date if specified
-    study_date = extracted_info.get("study_date")
+    # Study date is no longer in the prompt
+    study_date = None
     
     # Get ECG data using the utility function
     from app.utils.ecg_utils import get_patient_ecg_data
@@ -958,10 +971,11 @@ async def handle_compare_patients(db, extracted_info: Dict[str, Any], conversati
 
 async def handle_medical_question(extracted_info: Dict[str, Any], conversation_id: str, original_input: str = None) -> ChatResponse:
     """Handle general medical questions using OpenAI"""
-    # Get question and patient info
-    question = extracted_info.get("question")
+    # Get patient info (question is no longer in the prompt)
     patient_id = extracted_info.get("patient_id")
-    response = extracted_info.get("response")
+    # We no longer have question or response in the prompt
+    question = original_input if original_input else ""  # Use original_input directly
+    response = None
     
     # Always use original input if provided (this will contain the original URLs)
     if original_input:

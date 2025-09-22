@@ -159,6 +159,121 @@ def interpret_diagnosis(diagnosis_result: Dict) -> Dict:
 from app.utils.orthanc import get_instance_waveform
 from app.utils.auth_utils import get_temp_token
 
+def get_ecg_data(patient_id: Optional[str] = None, instance_id: Optional[str] = None, study_date: Optional[str] = None) -> Dict[str, Any]:
+    """Get ECG data by either patient_id or instance_id.
+    
+    Args:
+        patient_id (str, optional): Patient ID to get the latest ECG for
+        instance_id (str, optional): The DICOM UID / instance ID to get a specific ECG
+        study_date (str, optional): Study date in YYYYMMDD format (only used with patient_id)
+        
+    Returns:
+        dict: Dictionary containing:
+        - patient: Patient information
+        - ecg_data: ECG data including waveform and metadata
+        - error: Error message if any
+        
+    Note: If both patient_id and instance_id are provided, instance_id takes precedence.
+    """
+    if instance_id:
+        return get_ecg_by_instance_id(instance_id)
+    elif patient_id:
+        return get_patient_ecg_data(patient_id, study_date)
+    else:
+        return {"error": "Either patient_id or instance_id must be provided"}
+
+def get_ecg_by_instance_id(instance_id: str) -> Dict[str, Any]:
+    """Get ECG data for a specific instance ID (dicom_uid).
+    
+    Args:
+        instance_id (str): The DICOM UID / instance ID
+        
+    Returns:
+        dict: Dictionary containing:
+        - patient: Patient information
+        - ecg_data: ECG data including waveform and metadata
+        - error: Error message if any
+    """
+    try:
+        # Find the ECG file by dicom_uid
+        try:
+            logging.info(f"[get_ecg_by_instance_id] Looking for ECG with instance ID: {instance_id}")
+            ecg_file = EcgFile.objects(dicom_uid=instance_id).first()
+            if not ecg_file:
+                return {"error": f"ECG not found with instance ID: {instance_id}"}
+            logging.info(f"[get_ecg_by_instance_id] Found ECG file: {ecg_file.dicom_uid}, Created At: {ecg_file.created_at}")
+        except Exception as e:
+            return {"error": f"Error getting ECG: {str(e)}"}
+        
+        # Get patient info
+        try:
+            patient = Patient.objects(id=ecg_file.patient_id).first()
+            if not patient:
+                return {"error": f"Patient not found for ECG instance: {instance_id}"}
+            logging.info(f"[get_ecg_by_instance_id] Found patient: {patient.id} ({patient.name})")
+        except Exception as e:
+            return {"error": f"Error getting patient: {str(e)}"}
+        
+        # Get temporary token for Orthanc API access
+        try:
+            logging.info(f"[get_ecg_by_instance_id] Getting temp token for Orthanc access")
+            token = get_temp_token()
+            if not token:
+                logging.error(f"[get_ecg_by_instance_id] Failed to get auth token")
+                return {"error": "Failed to get authentication token"}
+            logging.info(f"[get_ecg_by_instance_id] Got token, length: {len(token)}")
+            
+            logging.info(f"[get_ecg_by_instance_id] Getting waveform data for DICOM: {ecg_file.dicom_uid}")
+            waveform_data = get_instance_waveform(ecg_file.dicom_uid, token)
+            logging.info(f"[get_ecg_by_instance_id] Waveform data retrieved: {bool(waveform_data)}")
+        except Exception as e:
+            logging.error(f"[get_ecg_by_instance_id] Error getting waveform data: {str(e)}")
+            logging.error(traceback.format_exc())
+            return {"error": f"Error accessing ECG data: {str(e)}"}
+        
+        # Get diagnosis interpretation
+        if not ecg_file.diagnosis_result:
+            logging.warning(f"[get_ecg_by_instance_id] No diagnosis result found for ECG file: {ecg_file.dicom_uid}")
+            
+        diagnosis = interpret_diagnosis(ecg_file.diagnosis_result)
+        # Log diagnostic interpretation results and original data status
+        logging.info(f"[get_ecg_by_instance_id] Raw diagnosis data exists: {bool(ecg_file.diagnosis_result)}")
+        logging.info(f"[get_ecg_by_instance_id] Diagnosis interpretation: {diagnosis.get('interpretation', 'N/A')}")
+        
+        if not waveform_data:
+            return {"error": f"Failed to get ECG waveform data from Orthanc server"}
+            
+        # Format ECG data
+        study_datetime = ecg_file.created_at
+        ecg_data = {
+            "study_date": study_datetime.strftime("%Y%m%d"),
+            "study_time": study_datetime.strftime("%H%M%S"),
+            "dicom_uid": ecg_file.dicom_uid,  # Include dicom_uid as instance ID
+            "waveform": waveform_data,
+            "diagnosis": {
+                "raw_results": ecg_file.diagnosis_result,
+                "interpretation": diagnosis["interpretation"],
+                "probabilities": diagnosis["probabilities"]
+            }
+        }
+        
+        # Format patient data
+        patient_data = {
+            "patient_id": patient.patient_id,
+            "name": patient.name,
+            "gender": patient.gender,
+            "birth_date": patient.birth_date.strftime("%Y-%m-%d") if patient.birth_date else None
+        }
+        
+        return {
+            "patient": patient_data,
+            "ecg_data": ecg_data
+        }
+        
+    except Exception as e:
+        logging.error(f"[get_ecg_by_instance_id] Error getting ECG data: {str(e)}")
+        return {"error": f"Failed to get ECG data: {str(e)}"}
+
 def get_patient_ecg_data(patient_id: str, study_date: Optional[str] = None) -> Dict[str, Any]:
     """Get ECG data for a patient from database and Orthanc server.
     

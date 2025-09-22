@@ -97,10 +97,7 @@ STRICT RESPONSE FORMAT:
     "confidence": <CONFIDENCE_SCORE>,
     "extracted_info": {{
         "patient_id": "<PATIENT_ID>",
-        "patient_name": "<PATIENT_NAME>",
-        "question": "<MEDICAL_QUESTION>",
-        "ecg_id": "<ECG_ID>",
-        "diagnosis": "<DIAGNOSIS>"
+        "ecg_id": "<ECG_ID>"
     }}
 }}
 
@@ -126,24 +123,18 @@ Example valid responses:
     "intent": "query_patient",
     "confidence": 0.95,
     "extracted_info": {{
-        "patient_id": "",
-        "patient_name": "John",
-        "question": "",
-        "ecg_id": "",
-        "diagnosis": ""
+        "patient_id": "123456",
+        "ecg_id": ""
     }}
 }}
 
-2. User: "What's the ECG analysis for patient ID 123?"
+2. User: "What's the ECG analysis for instance ID abc-123?"
 {{
     "intent": "analyze_ecg",
     "confidence": 0.9,
     "extracted_info": {{
-        "patient_id": "123",
-        "patient_name": "",
-        "question": "",
-        "ecg_id": "",
-        "diagnosis": ""
+        "patient_id": "",
+        "ecg_id": "abc-123"
     }}
 }}
 '''
@@ -222,10 +213,15 @@ Example valid responses:
                 # Handle extracted information
                 extracted_info = result["extracted_info"]
                 # Ensure all required fields exist
-                required_info_fields = ["patient_id", "patient_name", "question", "ecg_id", "diagnosis"]
+                required_info_fields = ["patient_id", "ecg_id"]
                 for field in required_info_fields:
                     if field not in extracted_info:
                         extracted_info[field] = ""
+                        
+                # Add empty values for backward compatibility
+                extracted_info["patient_name"] = ""
+                extracted_info["question"] = ""
+                extracted_info["diagnosis"] = ""
                 
                 # If current patient ID exists and extracted info doesn't have patient ID, use current patient ID
                 if current_patient_id and not extracted_info["patient_id"]:
