@@ -745,21 +745,17 @@ async def handle_export_report(db, extracted_info: Dict[str, Any], conversation_
             logging.info(f"[handle_export_report] Received interpretation response from AI server for instance {instance_id}")
             
             # Try to fetch the ECG file data for the given instance ID
-            # First try direct _id match
-            ecg_file = await db.get_ecg_data(instance_id)
+            from app.model.ecg_file import EcgFile
             
-            # If not found, try to find by instanceIDs field
-            if not ecg_file:
-                # Query for ECG files that have this instance_id in their instanceIDs list
-                cursor = db.db.ecg_files.find({"instanceIDs": instance_id})
-                async for doc in cursor:
-                    if doc:
-                        from app.model.ecg_file import EcgFile
-                        ecg_file = EcgFile(**doc)
-                        logging.info(f"[handle_export_report] Found ECG file by instanceIDs: {ecg_file.id}")
-                        break
+            # First try to find by dicom_uid (which should be the same as instance_id)
+            ecg_file = None
+            try:
+                ecg_file = EcgFile.objects(dicom_uid=instance_id).first()
+                if ecg_file:
+                    logging.info(f"[handle_export_report] Found ECG file by dicom_uid: {ecg_file.id}")
+            except Exception as e:
+                logging.error(f"[handle_export_report] Error finding ECG file by dicom_uid: {str(e)}", exc_info=True)
             
-            logging.info(f"[handle_export_report] ECG file found: {ecg_file is not None}")
             
             # Generate interpretation based on diagnosis_result if available
             if ecg_file and hasattr(ecg_file, 'diagnosis_result') and ecg_file.diagnosis_result:
