@@ -259,9 +259,16 @@ async def handle_analyze_ecg(db, extracted_info: Dict[str, Any], conversation_id
     # Study date is no longer in the prompt
     study_date = None
     
-    # Get ECG data using the utility function
-    from app.utils.ecg_utils import get_patient_ecg_data
-    result = get_patient_ecg_data(patient_id, study_date)
+    # Get ECG data using the appropriate utility function
+    if instance_id:
+        # If instance_id is provided, use it directly to get the specific ECG
+        result = get_ecg_by_instance_id(instance_id)
+        logging.info(f"[handle_view_ecg] Getting ECG data by instance_id: {instance_id}")
+    else:
+        # Otherwise get the latest ECG for the patient
+        from app.utils.ecg_utils import get_patient_ecg_data
+        result = get_patient_ecg_data(patient_id, study_date)
+        logging.info(f"[handle_view_ecg] Getting latest ECG data for patient: {patient_id}")
     
     if "error" in result:
         logging.warning(f"[handle_analyze_ecg] {result['error']} for patient {patient_id}")
@@ -425,9 +432,16 @@ async def handle_view_ecg(db, extracted_info: Dict[str, Any], conversation_id: s
     # Study date is no longer in the prompt
     study_date = None
     
-    # Get ECG data using the utility function
-    from app.utils.ecg_utils import get_patient_ecg_data
-    result = get_patient_ecg_data(patient_id, study_date)
+    # Get ECG data using the appropriate utility function
+    if instance_id:
+        # If instance_id is provided, use it directly to get the specific ECG
+        result = get_ecg_by_instance_id(instance_id)
+        logging.info(f"[handle_view_ecg] Getting ECG data by instance_id: {instance_id}")
+    else:
+        # Otherwise get the latest ECG for the patient
+        from app.utils.ecg_utils import get_patient_ecg_data
+        result = get_patient_ecg_data(patient_id, study_date)
+        logging.info(f"[handle_view_ecg] Getting latest ECG data for patient: {patient_id}")
     
     if "error" in result:
         return ChatResponse(
@@ -555,9 +569,16 @@ async def handle_generate_report(db, extracted_info: Dict[str, Any], conversatio
     # Study date is no longer in the prompt
     study_date = None
     
-    # Get ECG data using the utility function
-    from app.utils.ecg_utils import get_patient_ecg_data
-    result = get_patient_ecg_data(patient_id, study_date)
+    # Get ECG data using the appropriate utility function
+    if instance_id:
+        # If instance_id is provided, use it directly to get the specific ECG
+        result = get_ecg_by_instance_id(instance_id)
+        logging.info(f"[handle_view_ecg] Getting ECG data by instance_id: {instance_id}")
+    else:
+        # Otherwise get the latest ECG for the patient
+        from app.utils.ecg_utils import get_patient_ecg_data
+        result = get_patient_ecg_data(patient_id, study_date)
+        logging.info(f"[handle_view_ecg] Getting latest ECG data for patient: {patient_id}")
     
     if "error" in result:
         return ChatResponse(
