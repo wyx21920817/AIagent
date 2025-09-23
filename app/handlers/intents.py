@@ -230,15 +230,10 @@ async def handle_analyze_ecg(db, extracted_info: Dict[str, Any], conversation_id
     if "ecg_id" in extracted_info and extracted_info["ecg_id"]:
         instance_id = extracted_info["ecg_id"]
         logging.info(f"[handle_analyze_ecg] Using instance_id from extracted_info: {instance_id}")
-        
-        # Update the session with the instance_id
-        try:
-            if session:
-                session.ecg_instance_id = instance_id
-                await session_manager.save_session(session)
-                logging.info(f"[handle_analyze_ecg] Updated session with instance_id: {instance_id}")
-        except Exception as e:
-            logging.error(f"[handle_analyze_ecg] Error updating session with instance_id: {str(e)}", exc_info=True)
+    # If no instance_id in request, check if one exists in the session
+    elif session and session.ecg_instance_id:
+        instance_id = session.ecg_instance_id
+        logging.info(f"[handle_analyze_ecg] Using instance_id from session: {instance_id}")
     
     # 1. First check if patient_id exists in extracted_info
     if "patient_id" in extracted_info and extracted_info["patient_id"]:
@@ -261,7 +256,7 @@ async def handle_analyze_ecg(db, extracted_info: Dict[str, Any], conversation_id
     
     # Get ECG data using the appropriate utility function
     if instance_id:
-        # If instance_id is provided, use it directly to get the specific ECG
+        # If instance_id is provided (from request or session), use it directly to get the specific ECG
         result = get_ecg_by_instance_id(instance_id)
         logging.info(f"[handle_view_ecg] Getting ECG data by instance_id: {instance_id}")
     else:
@@ -277,21 +272,23 @@ async def handle_analyze_ecg(db, extracted_info: Dict[str, Any], conversation_id
             conversation_id=conversation_id
         )
         
-    # Store the ECG instance ID (dicom_uid) in the session
-    try:
-        # Get the dicom_uid from the result
-        ecg_data = result.get("ecg_data", {})
-        dicom_uid = ecg_data.get("dicom_uid")
+    # Get the dicom_uid from the result and ensure instance_id is set correctly
+    ecg_data = result.get("ecg_data", {})
+    dicom_uid = ecg_data.get("dicom_uid")
+    
+    # Always use the dicom_uid from the result as the definitive instance_id
+    if dicom_uid:
+        instance_id = dicom_uid
         
-        if dicom_uid:
-            # Update the session with the ECG instance ID
+        # Update the session with the ECG instance ID
+        try:
             session = await session_manager.get_session(conversation_id)
             if session:
-                session.ecg_instance_id = dicom_uid
+                session.ecg_instance_id = instance_id
                 await session_manager.save_session(session)
-                logging.info(f"[handle_analyze_ecg] Stored ecg_instance_id {dicom_uid} in session for patient {patient_id}")
-    except Exception as e:
-        logging.error(f"[handle_analyze_ecg] Error updating session with ecg_instance_id: {str(e)}", exc_info=True)
+                logging.info(f"[handle_analyze_ecg] Stored ecg_instance_id {instance_id} in session for patient {patient_id}")
+        except Exception as e:
+            logging.error(f"[handle_analyze_ecg] Error updating session with ecg_instance_id: {str(e)}", exc_info=True)
     
     # Get ECG data
     ecg_data = result["ecg_data"]
@@ -402,14 +399,10 @@ async def handle_view_ecg(db, extracted_info: Dict[str, Any], conversation_id: s
     instance_id = extracted_info.get("instance_id") or extracted_info.get("ecg_id") or extracted_info.get("report_id")
     if instance_id:
         logging.info(f"[handle_view_ecg] Instance ID specified in request: {instance_id}")
-        # Update the session with the requested instance_id immediately
-        try:
-            if session:
-                session.ecg_instance_id = instance_id
-                await session_manager.save_session(session)
-                logging.info(f"[handle_view_ecg] Updated session with requested instance_id: {instance_id}")
-        except Exception as e:
-            logging.error(f"[handle_view_ecg] Error updating session with requested instance_id: {str(e)}", exc_info=True)
+    # If no instance_id in request, check if one exists in the session
+    elif session and session.ecg_instance_id:
+        instance_id = session.ecg_instance_id
+        logging.info(f"[handle_view_ecg] Using instance_id from session: {instance_id}")
     
     # 1. First check if patient_id exists in extracted_info
     if "patient_id" in extracted_info and extracted_info["patient_id"]:
@@ -454,14 +447,22 @@ async def handle_view_ecg(db, extracted_info: Dict[str, Any], conversation_id: s
     date_str = f"{ecg_data['study_date'][:4]}-{ecg_data['study_date'][4:6]}-{ecg_data['study_date'][6:]}"
     time_str = f"{ecg_data['study_time'][:2]}:{ecg_data['study_time'][2:4]}"
     
-    # We already updated the session with the requested instance_id at the beginning of the function
-    # So we don't need to overwrite it with the retrieved ECG's instance_id
-    # Just log the retrieved ECG's instance_id for debugging
+    # Get the dicom_uid from the result and ensure instance_id is set correctly
     dicom_uid = ecg_data.get("dicom_uid")
+    
+    # Always use the dicom_uid from the result as the definitive instance_id
     if dicom_uid:
-        logging.info(f"[handle_view_ecg] Retrieved ECG has instance_id: {dicom_uid}")
-    else:
-        logging.warning(f"[handle_view_ecg] Retrieved ECG has no instance_id")
+        instance_id = dicom_uid
+        
+        # Update the session with the ECG instance ID
+        try:
+            session = await session_manager.get_session(conversation_id)
+            if session:
+                session.ecg_instance_id = instance_id
+                await session_manager.save_session(session)
+                logging.info(f"[handle_view_ecg] Stored ecg_instance_id {instance_id} in session for patient {patient_id}")
+        except Exception as e:
+            logging.error(f"[handle_view_ecg] Error updating session with ecg_instance_id: {str(e)}", exc_info=True)
     
     # Prepare response message
     info_lines = [
