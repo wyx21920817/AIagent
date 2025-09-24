@@ -10,16 +10,16 @@ services:
     ports:
       - "8888:8888"
     environment:
-      - MONGODB_URI=mongodb+srv://bingbing19901:pjL5A5WgpI8ahTdl@cluster0.ytrifje.mongodb.net/aiclinic?retryWrites=true&w=majority&appName=Cluster0
-      - ORTHANC_SERVER_URL=http://54.79.181.49:8042
-      - AUTH_SERVER_URL=http://54.79.181.49:8001
-      - AIAGENT_URL=http://54.79.181.49:8888
+      - MONGODB_URI=mongodb://mongodb:27017/aiclinic
+      - ORTHANC_SERVER_URL=http://orthanc:8042
+      - AUTH_SERVER_URL=http://webserverauth:8001
+      - AIAGENT_URL=http://127.0.0.1:8888
     volumes:
       - ./logs:/app/logs
       - ./reports:/app/reports
     networks:
-      - aiagent-network
+      - aiclinic-net
 
 networks:
-  aiagent-network:
-    driver: bridge
+  aiclinic-net:
+    external: true

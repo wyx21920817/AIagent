@@ -12,12 +12,7 @@ __pycache__/
 
 # Virtual environments
 venv/
-env/
-ENV/
 
-# Local development settings
-.env.local
-.env.development
 
 # Logs and reports (these will be created in the container)
 logs/
