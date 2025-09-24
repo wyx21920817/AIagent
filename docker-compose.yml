@@ -2,9 +2,7 @@ version: '3.8'
 
 services:
   aiagent:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: balalabalala/aiagent:latest
     container_name: aiagent
     restart: unless-stopped
     ports:
