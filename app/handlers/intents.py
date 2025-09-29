@@ -562,13 +562,30 @@ async def handle_generate_report(db, extracted_info: Dict[str, Any], conversatio
     """Generate a diagnostic report"""
     patient_id = extracted_info.get("patient_id")
     if not patient_id:
-        return ChatResponse(
-            message="Please specify a patient ID to generate report.",
-            conversation_id=conversation_id
-        )
+        # Try to get patient_id from session
+        session = await session_manager.get_session(conversation_id)
+        if session and session.patient_id:
+            patient_id = session.patient_id
+            logging.info(f"[handle_generate_report] Using patient_id from session: {patient_id}")
+        else:
+            logging.warning("[handle_generate_report] No patient_id in extracted_info or session")
+            return ChatResponse(
+                message="Please specify a patient ID to generate report.",
+                conversation_id=conversation_id
+            )
     
     # Study date is no longer in the prompt
     study_date = None
+    
+    # Get instance_id from extracted_info if available
+    instance_id = extracted_info.get("ecg_id")
+    
+    # If no instance_id in extracted_info, try to get from session
+    if not instance_id:
+        session = await session_manager.get_session(conversation_id)
+        if session and session.ecg_instance_id:
+            instance_id = session.ecg_instance_id
+            logging.info(f"[handle_generate_report] Using instance_id from session: {instance_id}")
     
     # Get ECG data using the appropriate utility function
     if instance_id:
