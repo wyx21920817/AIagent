@@ -607,6 +607,21 @@ async def handle_generate_report(db, extracted_info: Dict[str, Any], conversatio
     patient = result["patient"]
     ecg_data = result["ecg_data"]
     
+    # If we got ECG data and there's a dicom_uid, save it as the instance_id
+    if "dicom_uid" in ecg_data:
+        instance_id = ecg_data["dicom_uid"]
+        logging.info(f"[handle_generate_report] Found instance_id from ECG data: {instance_id}")
+        
+        # Save the instance_id to the session
+        try:
+            session = await session_manager.get_session(conversation_id)
+            if session:
+                session.ecg_instance_id = instance_id
+                await session_manager.save_session(session)
+                logging.info(f"[handle_generate_report] Saved instance_id {instance_id} to session")
+        except Exception as e:
+            logging.error(f"[handle_generate_report] Error saving instance_id to session: {str(e)}")
+    
     # Format date and time
     date_str = f"{ecg_data['study_date'][:4]}-{ecg_data['study_date'][4:6]}-{ecg_data['study_date'][6:]}"
     time_str = f"{ecg_data['study_time'][:2]}:{ecg_data['study_time'][2:4]}"
