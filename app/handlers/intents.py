@@ -648,8 +648,6 @@ async def handle_generate_report(db, extracted_info: Dict[str, Any], conversatio
         report_lines.extend([
             "",
             "Diagnostic Results:",
-            f"- Heart Rate: {diagnosis.get('heart_rate', 'Not Available')} BPM",
-            f"- Rhythm: {diagnosis.get('rhythm', 'Not Available')}",
             f"- Interpretation: {diagnosis.get('interpretation', 'Not Available')}"
         ])
         
