@@ -14,6 +14,7 @@ class EcgFile(Document):
     created_at = DateTimeField(default=datetime.utcnow)
     updated_at = DateTimeField(default=datetime.utcnow)
     Approved_status = BooleanField(default=False)
+    is_ai_diagnosed = BooleanField(default=False)  # Flag to indicate if AI diagnosis has been performed
 
     meta = {
         'collection': 'ecg_files',
