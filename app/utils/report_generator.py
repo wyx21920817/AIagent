@@ -190,9 +190,28 @@ def generate_ecg_report_pdf(interpretation_data, output_path, instance_id=None):
                     # Add the report text
                     report_text = report.get("report_text", "")
                     if report_text:
-                        # Split the report text by lines and add each line
-                        for line in report_text.split("\n"):
-                            elements.append(Paragraph(line, normal_style))
+                        # Check if report_text is a list (new format) or string (old format)
+                        if isinstance(report_text, list):
+                            # New format: list of dictionaries with section_title and content
+                            for section in report_text:
+                                if isinstance(section, dict):
+                                    section_title = section.get("section_title", "")
+                                    content = section.get("content", "")
+                                    
+                                    if section_title:
+                                        elements.append(Spacer(1, 0.1*inch))
+                                        elements.append(Paragraph(section_title, heading_style))
+                                    
+                                    if content:
+                                        elements.append(Paragraph(content, normal_style))
+                                else:
+                                    # If it's not a dict, just add it as a string
+                                    elements.append(Paragraph(str(section), normal_style))
+                        else:
+                            # Old format: string with newlines
+                            for line in report_text.split("\n"):
+                                if line.strip():  # Only add non-empty lines
+                                    elements.append(Paragraph(line, normal_style))
                     
                     # Add images if available
                     image_paths = report.get("image_paths", {})
